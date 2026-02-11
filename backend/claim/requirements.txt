@@ -1,0 +1,5 @@
+fastapi
+uvicorn[standard]
+pika==1.3.2     # For RabbitMQ communication
+sqlalchemy      # For Database interactions
+psycopg2-binary # Postgres driver
