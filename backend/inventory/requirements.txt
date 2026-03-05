@@ -1,4 +1,0 @@
-fastapi
-uvicorn[standard]
-pika==1.3.2   # For RabbitMQ communication
-requests      # To talk to other services via HTTP
