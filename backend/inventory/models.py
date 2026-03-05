@@ -4,10 +4,16 @@ from database import Base
 
 
 class ListingStatus(str, enum.Enum):
-    AVAILABLE = "AVAILABLE"
-    PENDING = "PENDING"
+    AVAILABLE = "AVAILABLE" # active listing that can be purchase or claim
+    
+    PENDING_PAYMENT = "PENDING_PAYMENT" 
     SOLD = "SOLD"
 
+    PEDNING_COLLECTION = "PENDING_COLLECTION"  
+    COLLECTED = "COLLECTED"                     
+
+    EXPIRED = "EXPIRED"         #to vet thro if we want to immediately change to available or use expired/cannelled status
+    CANCELLED = "CANCELLED"
 
 # Represents a row in the food_listings table
 class FoodListing(Base):
