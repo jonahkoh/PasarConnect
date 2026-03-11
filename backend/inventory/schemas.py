@@ -12,7 +12,7 @@ class FoodListingCreate(BaseModel):
     quantity: int = Field(..., gt=0)
     expiry_date: datetime
 
-    @field_validator("expiry_date")     # need to change it to automatically validate that the expiry_date is in the future
+    @field_validator("expiry_date")
     @classmethod
     def must_be_future(cls, v: datetime) -> datetime:
         v_utc = v if v.tzinfo else v.replace(tzinfo=timezone.utc)

@@ -1,40 +1,33 @@
 import enum
-from sqlalchemy import Column, DateTime, Enum, Integer, String, func, text
+import datetime
+from sqlalchemy import Enum as SAEnum, Integer, String, DateTime, text, func
+from sqlalchemy.orm import Mapped, mapped_column
 from database import Base
 
 
 class ListingStatus(str, enum.Enum):
-    AVAILABLE = "AVAILABLE" # active listing that can be purchase or claim
-    
-    PENDING_PAYMENT = "PENDING_PAYMENT" 
-    SOLD = "SOLD"
+    AVAILABLE          = "AVAILABLE"
+    PENDING_PAYMENT    = "PENDING_PAYMENT"
+    PENDING_COLLECTION = "PENDING_COLLECTION"
+    SOLD               = "SOLD"
 
-    PEDNING_COLLECTION = "PENDING_COLLECTION"  
-    COLLECTED = "COLLECTED"                     
 
-    EXPIRED = "EXPIRED"         #to vet thro if we want to immediately change to available or use expired/cannelled status
-    CANCELLED = "CANCELLED"
-
-# Represents a row in the food_listings table
+# Represents a row in the food_listings table.
 class FoodListing(Base):
     __tablename__ = "food_listings"
 
-    id = Column(Integer, primary_key=True, index=True)
-    vendor_id = Column(String(64), nullable=False, index=True)
-    title = Column(String(255), nullable=False)
-    description = Column(String(1024), nullable=True)
-    quantity = Column(Integer, nullable=False)
-    expiry_date = Column(DateTime(timezone=True), nullable=False)
-
-    status = Column(
-        Enum(ListingStatus, name="listing_status_enum"),
+    id          : Mapped[int]                      = mapped_column(Integer, primary_key=True, index=True)
+    vendor_id   : Mapped[str]                      = mapped_column(String(64), nullable=False, index=True)
+    title       : Mapped[str]                      = mapped_column(String(255), nullable=False)
+    description : Mapped[str | None]               = mapped_column(String(1024), nullable=True)
+    quantity    : Mapped[int]                      = mapped_column(Integer, nullable=False)
+    expiry_date : Mapped[datetime.datetime]        = mapped_column(DateTime(timezone=True), nullable=False)
+    status      : Mapped[ListingStatus]            = mapped_column(
+        SAEnum(ListingStatus, name="listing_status_enum"),
         nullable=False,
         default=ListingStatus.AVAILABLE,
         server_default=text("'AVAILABLE'"),
     )
-
-    # version is used for optimistic locking (Phase 1 · Step 2)
-    version = Column(Integer, nullable=False, default=0, server_default=text("0"))
-
-    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), nullable=True, onupdate=func.now())
+    version     : Mapped[int]                      = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    created_at  : Mapped[datetime.datetime]        = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at  : Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, onupdate=func.now())

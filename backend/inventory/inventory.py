@@ -1,7 +1,7 @@
 from contextlib import asynccontextmanager
 from typing import List
 
-from fastapi import Depends, FastAPI, HTTPException, Path, status
+from fastapi import Depends, FastAPI, HTTPException, Path
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 

@@ -3,7 +3,7 @@ import grpc.aio
 
 import inventory_pb2
 import inventory_pb2_grpc
-from database import AsyncSessionLocal
+from database import SessionLocal
 from lock_service import LockConflictError, ListingNotFoundError, lock_listing
 from models import ListingStatus
 
@@ -11,8 +11,10 @@ GRPC_PORT = 50051
 
 # Map the proto enum integers to our SQLAlchemy enum values
 _STATUS_MAP = {
-    inventory_pb2.PENDING: ListingStatus.PENDING,
-    inventory_pb2.SOLD: ListingStatus.SOLD,
+    inventory_pb2.AVAILABLE:          ListingStatus.AVAILABLE,
+    inventory_pb2.PENDING_PAYMENT:    ListingStatus.PENDING_PAYMENT,
+    inventory_pb2.PENDING_COLLECTION: ListingStatus.PENDING_COLLECTION,
+    inventory_pb2.SOLD:               ListingStatus.SOLD,
 }
 
 
@@ -23,7 +25,7 @@ class InventoryServicer(inventory_pb2_grpc.InventoryServiceServicer):
             await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Invalid new_status value.")
             return inventory_pb2.LockListingResponse()
 
-        async with AsyncSessionLocal() as db:
+        async with SessionLocal() as db:
             try:
                 new_version = await lock_listing(
                     db,
