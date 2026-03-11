@@ -1,0 +1,89 @@
+services:
+
+  # ── Databases ──────────────────────────────────────────────────────────────
+
+  inventory-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER:     postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB:       inventory_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - inventory-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d inventory_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  claim-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER:     postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB:       claim_db
+    ports:
+      - "5434:5432"
+    volumes:
+      - claim-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d claim_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ── Message Broker ─────────────────────────────────────────────────────────
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    ports:
+      - "5672:5672"    # AMQP
+      - "15672:15672"  # Management UI  →  http://localhost:15672  (guest/guest)
+
+  # ── Services ───────────────────────────────────────────────────────────────
+
+  inventory-service:
+    build:
+      context: ./backend
+      dockerfile: inventory/Dockerfile
+    ports:
+      - "8001:8001"   # HTTP
+      - "50051:50051" # gRPC
+    environment:
+      DB_HOST:     inventory-db
+      DB_PORT:     5432
+      DB_USER:     postgres
+      DB_PASSWORD: postgres
+      DB_NAME:     inventory_db
+    depends_on:
+      inventory-db:
+        condition: service_healthy
+
+  claim-service:
+    build:
+      context: ./backend
+      dockerfile: claim/Dockerfile
+    ports:
+      - "8002:8002"
+    environment:
+      DB_HOST:              claim-db
+      DB_PORT:              5432
+      DB_USER:              postgres
+      DB_PASSWORD:          postgres
+      DB_NAME:              claim_db
+      INVENTORY_GRPC_HOST:  inventory-service
+      INVENTORY_GRPC_PORT:  50051
+      RABBITMQ_HOST:        rabbitmq
+    depends_on:
+      claim-db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_started
+      inventory-service:
+        condition: service_started
+
+volumes:
+  inventory-db-data:
+  claim-db-data:
