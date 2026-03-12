@@ -17,7 +17,7 @@ grpcio-tools==1.67.1
 
 # RabbitMQ (Claim/Notification/Auditor event publishing — blocking)
 pika==1.3.2
-# RabbitMQ (Payment Service async publishing)
+# RabbitMQ async client used by Claim/Payment orchestrators
 aio-pika==9.4.3
 
 # ── Testing ───────────────────────────────────────────────────────────────────
