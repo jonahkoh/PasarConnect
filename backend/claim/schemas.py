@@ -1,24 +1,32 @@
 import datetime
-from pydantic import BaseModel
-from models import ClaimStatus
+import enum
+
+from pydantic import BaseModel, Field
+
+
+class ClaimStatus(str, enum.Enum):
+    """Public status values returned by the Claim Orchestrator."""
+
+    PENDING_COLLECTION = "PENDING_COLLECTION"
+    COMPLETED = "COMPLETED"
+    CANCELLED = "CANCELLED"
 
 
 class ClaimCreate(BaseModel):
     """What the client sends when creating a claim."""
 
-    listing_id      : int
-    charity_id      : int
-    listing_version : int   # version the charity last read — used for optimistic locking
+    listing_id: int = Field(..., gt=0)
+    charity_id: int = Field(..., gt=0)
+    listing_version: int = Field(..., ge=0)  # optimistic-lock version seen by the client
 
 
 class ClaimResponse(BaseModel):
-    """What the API returns after a claim is created."""
+    """What the orchestrator returns after a successful workflow."""
 
-    model_config = {"from_attributes": True}
-
-    id              : int
-    listing_id      : int
-    charity_id      : int
-    status          : ClaimStatus
-    listing_version : int
-    created_at      : datetime.datetime
+    id: int
+    listing_id: int
+    charity_id: int
+    status: ClaimStatus
+    listing_version: int
+    created_at: datetime.datetime
+    updated_at: datetime.datetime | None
