@@ -27,7 +27,7 @@ async def lifespan(app: FastAPI):
     await database.engine.dispose()
 
 
-app = FastAPI(title="Foodloop — Inventory Service", lifespan=lifespan)
+app = FastAPI(title="PasarConnect — Inventory Service", lifespan=lifespan)
 
 
 @app.get("/health")

@@ -20,7 +20,7 @@ async def lifespan(app: FastAPI):
     await engine.dispose()
 
 
-app = FastAPI(title="Claim Service", lifespan=lifespan)
+app = FastAPI(title="PasarConnect — Claim Service", lifespan=lifespan)
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
