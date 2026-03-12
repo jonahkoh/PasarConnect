@@ -34,6 +34,22 @@ services:
       timeout: 5s
       retries: 10
 
+  payment-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER:     postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB:       payment_db
+    ports:
+      - "5435:5432"
+    volumes:
+      - payment-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d payment_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   # ── Message Broker ─────────────────────────────────────────────────────────
 
   rabbitmq:
@@ -84,6 +100,55 @@ services:
       inventory-service:
         condition: service_started
 
+  payment-service:
+    build:
+      context: ./backend
+      dockerfile: payment/Dockerfile
+    ports:
+      - "8003:8003"
+    environment:
+      # Payment Orchestrator is stateless — no DB of its own.
+      # All state lives in payment-log-service.
+      INVENTORY_GRPC_HOST:  inventory-service
+      INVENTORY_GRPC_PORT:  50051
+      RABBITMQ_HOST:        rabbitmq
+      STRIPE_WRAPPER_URL:   http://stripe-wrapper:8004
+      PAYMENT_LOG_URL:      http://payment-log-service:8005
+    depends_on:
+      rabbitmq:
+        condition: service_started
+      inventory-service:
+        condition: service_started
+      stripe-wrapper:
+        condition: service_started
+      payment-log-service:
+        condition: service_started
+
+  stripe-wrapper:
+    build:
+      context: ./backend
+      dockerfile: stripe_wrapper/Dockerfile
+    ports:
+      - "8004:8004"
+    # Fully stateless — no DB, no message broker.
+
+  payment-log-service:
+    build:
+      context: ./backend
+      dockerfile: payment_log/Dockerfile
+    ports:
+      - "8005:8005"
+    environment:
+      DB_HOST:     payment-db
+      DB_PORT:     5432
+      DB_USER:     postgres
+      DB_PASSWORD: postgres
+      DB_NAME:     payment_db
+    depends_on:
+      payment-db:
+        condition: service_healthy
+
 volumes:
   inventory-db-data:
   claim-db-data:
+  payment-db-data:

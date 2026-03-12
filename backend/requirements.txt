@@ -15,8 +15,10 @@ python-dotenv==1.0.1
 grpcio==1.67.1
 grpcio-tools==1.67.1
 
-# RabbitMQ (Claim/Notification/Auditor event publishing)
+# RabbitMQ (Claim/Notification/Auditor event publishing — blocking)
 pika==1.3.2
+# RabbitMQ (Payment Service async publishing)
+aio-pika==9.4.3
 
 # ── Testing ───────────────────────────────────────────────────────────────────
 pytest==8.3.4
