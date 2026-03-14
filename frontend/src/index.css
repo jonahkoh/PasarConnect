@@ -1,0 +1,272 @@
+:root {
+  font-family: Georgia, "Times New Roman", serif;
+  color: #1f2937;
+  background: #f6f4f1;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: #f6f4f1;
+  color: #243b2f;
+}
+
+a {
+  text-decoration: none;
+  color: inherit;
+}
+
+.app-shell {
+  min-height: 100vh;
+}
+
+.topbar {
+  height: 60px;
+  background: #f3f1ee;
+  border-bottom: 1px solid #d9d4cd;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 32px;
+}
+
+.brand {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #1f3b2d;
+}
+
+.topbar__nav {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  font-family: Inter, system-ui, sans-serif;
+  font-size: 0.95rem;
+}
+
+.page {
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 26px 32px 40px;
+}
+
+.hero h1 {
+  margin: 0;
+  font-size: 2.1rem;
+  color: #0f2f25;
+}
+
+.hero p {
+  margin: 10px 0 26px;
+  font-family: Inter, system-ui, sans-serif;
+  color: #557468;
+  font-size: 1.05rem;
+}
+
+.search-wrap {
+  max-width: 420px;
+  margin-bottom: 28px;
+}
+
+.search-input {
+  width: 100%;
+  height: 44px;
+  border: 1px solid #d5d1ca;
+  border-radius: 12px;
+  padding: 0 14px;
+  outline: none;
+  background: #faf8f5;
+  font-family: Inter, system-ui, sans-serif;
+}
+
+.search-input:focus {
+  border-color: #76a8c8;
+}
+
+.alert-success {
+  margin-bottom: 20px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #eaf8ee;
+  color: #1b5e35;
+  border: 1px solid #bfe6ca;
+  font-family: Inter, system-ui, sans-serif;
+}
+
+.empty-state {
+  padding: 32px;
+  border: 1px dashed #cfc8bf;
+  border-radius: 14px;
+  background: #faf8f5;
+  text-align: center;
+  font-family: Inter, system-ui, sans-serif;
+  color: #64756f;
+}
+
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 22px;
+}
+
+.food-card {
+  background: #f8f6f2;
+  border: 1px solid #d7d2cb;
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.food-card__media {
+  position: relative;
+  height: 175px;
+  overflow: hidden;
+  background: #e9e4dd;
+}
+
+.food-card__image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  background: #e7e1da;
+}
+
+.food-card__badge {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  color: white;
+  font-size: 0.78rem;
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-family: Inter, system-ui, sans-serif;
+}
+
+.badge--blue {
+  background: #2f9ee5;
+}
+
+.badge--orange {
+  background: #e4a52d;
+}
+
+.food-card__window {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  background: rgba(98, 110, 103, 0.88);
+  color: white;
+  font-size: 0.76rem;
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-family: Inter, system-ui, sans-serif;
+}
+
+.food-card__content {
+  padding: 14px 16px 14px;
+}
+
+.food-card__content h3 {
+  margin: 0 0 4px;
+  font-size: 1.12rem;
+  color: #132f25;
+}
+
+.food-card__vendor {
+  margin: 0 0 12px;
+  color: #6f8179;
+  font-size: 0.98rem;
+  font-family: Inter, system-ui, sans-serif;
+}
+
+.food-card__meta {
+  display: flex;
+  gap: 12px;
+  padding-bottom: 12px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid #ded9d1;
+  font-family: Inter, system-ui, sans-serif;
+  font-size: 0.92rem;
+  color: #657670;
+}
+
+.food-card__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.food-card__price {
+  color: #12452f;
+  font-size: 1rem;
+}
+
+.claim-btn {
+  border: none;
+  background: #2f9ee5;
+  color: white;
+  padding: 10px 18px;
+  border-radius: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: Inter, system-ui, sans-serif;
+}
+
+.claim-btn:hover:enabled {
+  background: #2088ca;
+}
+
+.claim-btn:disabled {
+  background: #9fb7c5;
+  cursor: not-allowed;
+}
+
+@media (max-width: 1100px) {
+  .card-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 700px) {
+  .topbar {
+    padding: 0 16px;
+  }
+
+  .page {
+    padding: 20px 16px 32px;
+  }
+
+  .card-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .topbar__nav {
+    gap: 12px;
+    font-size: 0.85rem;
+  }
+}
+ .hero__icon {
+  margin-right: 8px;
+}
+.topbar__link {
+  color: #4b5d57;
+  font-weight: 500;
+}
+
+.topbar__link--active {
+  color: #2a91d8;
+  font-weight: 700;
+}
+
+.topbar__signout {
+  border: none;
+  background: transparent;
+  color: #4b5d57;
+  font: inherit;
+  cursor: pointer;
+  padding: 0;
+}
