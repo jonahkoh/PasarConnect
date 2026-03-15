@@ -1,8 +1,7 @@
 from contextlib import asynccontextmanager
-import math
 from typing import List
 
-from fastapi import Depends, FastAPI, HTTPException, Path, Query
+from fastapi import Depends, FastAPI, HTTPException, Path
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -30,54 +29,10 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="PasarConnect — Inventory Service", lifespan=lifespan)
 
-EARTH_RADIUS_KM = 6371.0
-
 
 @app.get("/health")
 async def health_check():
     return {"status": "healthy", "service": "inventory"}
-
-
-@app.get("/listings/search/nearby", response_model=List[FoodListingResponse])
-async def search_nearby_listings(
-    latitude: float = Query(..., ge=-90, le=90, description="Center point latitude"),
-    longitude: float = Query(..., ge=-180, le=180, description="Center point longitude"),
-    radius_km: float = Query(..., gt=0, description="Search radius in kilometers"),
-    db: AsyncSession = Depends(get_db),
-):
-    # Bounding box pre-filter to reduce rows loaded from the database.
-    # 1 degree of latitude ≈ 111 km; longitude degrees vary by latitude.
-    lat_delta = radius_km / 111.0
-    lon_delta = radius_km / (111.0 * math.cos(math.radians(latitude)) + 1e-10)
-
-    result = await db.execute(
-        select(FoodListing).where(
-            FoodListing.latitude.isnot(None),
-            FoodListing.longitude.isnot(None),
-            FoodListing.latitude >= latitude - lat_delta,
-            FoodListing.latitude <= latitude + lat_delta,
-            FoodListing.longitude >= longitude - lon_delta,
-            FoodListing.longitude <= longitude + lon_delta,
-        )
-    )
-    listings = result.scalars().all()
-
-    nearby = []
-    for listing in listings:
-        distance_km = _haversine_km(latitude, longitude, listing.latitude, listing.longitude)
-        if distance_km <= radius_km:
-            nearby.append(listing)
-
-    return nearby
-
-
-def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    """Return the great-circle distance in kilometres between two points."""
-    phi1, phi2 = math.radians(lat1), math.radians(lat2)
-    dphi = math.radians(lat2 - lat1)
-    dlambda = math.radians(lon2 - lon1)
-    a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
-    return 2 * EARTH_RADIUS_KM * math.asin(math.sqrt(a))
 
 
 @app.get("/listings", response_model=List[FoodListingResponse])
