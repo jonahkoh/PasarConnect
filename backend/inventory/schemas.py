@@ -11,6 +11,8 @@ class FoodListingCreate(BaseModel):
     description: Optional[str] = Field(None, max_length=1024)
     quantity: int = Field(..., gt=0)
     expiry_date: datetime
+    latitude: Optional[float] = Field(None, ge=-90, le=90)
+    longitude: Optional[float] = Field(None, ge=-180, le=180)
 
     @field_validator("expiry_date")
     @classmethod
@@ -33,5 +35,7 @@ class FoodListingResponse(BaseModel):
     version: int
     created_at: datetime
     updated_at: Optional[datetime]
+    latitude: Optional[float]
+    longitude: Optional[float]
 
     model_config = {"from_attributes": True}

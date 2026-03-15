@@ -1,6 +1,6 @@
 import enum
 import datetime
-from sqlalchemy import Enum as SAEnum, Integer, String, DateTime, text, func
+from sqlalchemy import Enum as SAEnum, Float, Integer, String, DateTime, text, func
 from sqlalchemy.orm import Mapped, mapped_column
 from database import Base
 
@@ -31,3 +31,5 @@ class FoodListing(Base):
     version     : Mapped[int]                      = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
     created_at  : Mapped[datetime.datetime]        = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at  : Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, onupdate=func.now())
+    latitude    : Mapped[float | None]             = mapped_column(Float, nullable=True)
+    longitude   : Mapped[float | None]             = mapped_column(Float, nullable=True)
