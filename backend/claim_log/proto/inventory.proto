@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package inventory;
+
+service InventoryService {
+  rpc LockListing (LockListingRequest) returns (LockListingResponse);
+}
+
+enum NewStatus {
+  AVAILABLE             = 0;
+  PENDING_PAYMENT       = 1;
+  PENDING_COLLECTION    = 2;
+  SOLD                  = 3;
+}
+
+message LockListingRequest {
+  int32     listing_id       = 1;
+  int32     expected_version = 2;
+  NewStatus new_status       = 3;
+}
+
+message LockListingResponse {
+  bool  success     = 1;
+  int32 new_version = 2;
+}

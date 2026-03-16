@@ -12,6 +12,14 @@ COPY claim_log/ ./claim_log/
 
 WORKDIR /app/claim_log
 
+# Generate gRPC stubs used to synchronize inventory state on status updates
+RUN python -m grpc_tools.protoc \
+	-I./proto \
+	--python_out=. \
+	--grpc_python_out=. \
+	./proto/inventory.proto \
+	./proto/claim_log.proto
+
 EXPOSE 8006
 
 CMD ["uvicorn", "claim_log:app", "--host", "0.0.0.0", "--port", "8006"]
