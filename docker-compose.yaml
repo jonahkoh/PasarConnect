@@ -18,7 +18,7 @@ services:
       timeout: 5s
       retries: 10
 
-  claim-db:
+  claim-log-db:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER:     postgres
@@ -27,14 +27,14 @@ services:
     ports:
       - "5434:5432"
     volumes:
-      - claim-db-data:/var/lib/postgresql/data
+      - claim-log-db-data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d claim_db"]
       interval: 5s
       timeout: 5s
       retries: 10
 
-  payment-db:
+  payment-log-db:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER:     postgres
@@ -43,7 +43,7 @@ services:
     ports:
       - "5435:5432"
     volumes:
-      - payment-db-data:/var/lib/postgresql/data
+      - payment-log-db-data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d payment_db"]
       interval: 5s
@@ -103,13 +103,13 @@ services:
     ports:
       - "8006:8006"
     environment:
-      DB_HOST:     claim-db
+      DB_HOST:     claim-log-db
       DB_PORT:     5432
       DB_USER:     postgres
       DB_PASSWORD: postgres
       DB_NAME:     claim_db
     depends_on:
-      claim-db:
+      claim-log-db:
         condition: service_healthy
 
   payment-service:
@@ -151,16 +151,16 @@ services:
     ports:
       - "8005:8005"
     environment:
-      DB_HOST:     payment-db
+      DB_HOST:     payment-log-db
       DB_PORT:     5432
       DB_USER:     postgres
       DB_PASSWORD: postgres
       DB_NAME:     payment_db
     depends_on:
-      payment-db:
+      payment-log-db:
         condition: service_healthy
 
 volumes:
   inventory-db-data:
-  claim-db-data:
-  payment-db-data:
+  claim-log-db-data:
+  payment-log-db-data:
