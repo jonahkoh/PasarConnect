@@ -8,6 +8,7 @@ class ClaimStatus(str, enum.Enum):
     """Public status values returned by the Claim Orchestrator."""
 
     PENDING_COLLECTION = "PENDING_COLLECTION"
+    AWAITING_VENDOR_APPROVAL = "AWAITING_VENDOR_APPROVAL"
     COMPLETED = "COMPLETED"
     CANCELLED = "CANCELLED"
 
