@@ -13,7 +13,7 @@ No external client ever calls this service directly.
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, HTTPException
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import database
@@ -26,8 +26,30 @@ from schemas import LogCreate, LogResponse, LogUpdate
 async def lifespan(app: FastAPI):
     # Auto-create tables on startup
     async with engine.begin() as conn:
+        # Backward-compatible enum migration for existing Docker volumes.
+        # Older DBs may have paymentstatus enum without COLLECTED.
+        await conn.execute(
+            text(
+                """
+                DO $$
+                BEGIN
+                    IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'paymentstatus') THEN
+                        ALTER TYPE paymentstatus ADD VALUE IF NOT EXISTS 'COLLECTED';
+                    END IF;
+                END
+                $$;
+                """
+            )
+        )
         await conn.run_sync(Base.metadata.create_all)
+
+    # Run gRPC server in-process for orchestrator status updates.
+    from grpc_server import start_grpc_server
+    grpc_server = await start_grpc_server()
+
     yield
+
+    await grpc_server.stop(grace=5)
     await engine.dispose()
 
 

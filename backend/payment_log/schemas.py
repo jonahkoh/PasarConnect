@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 from models import PaymentStatus
 
 
-class LogCreate(BaseModel):
+class PaymentLogCreate(BaseModel):
     """Body for POST /logs — called by the Orchestrator after creating a PaymentIntent."""
     stripe_transaction_id : str   = Field(..., min_length=1, max_length=128)
     listing_id            : int   = Field(..., gt=0)
@@ -16,12 +16,12 @@ class LogCreate(BaseModel):
     amount                : float = Field(..., gt=0)
 
 
-class LogUpdate(BaseModel):
+class PaymentLogUpdate(BaseModel):
     """Body for PATCH /logs/{transaction_id} — updates the status only."""
     status: PaymentStatus
 
 
-class LogResponse(BaseModel):
+class PaymentLogResponse(BaseModel):
     """What the API returns for every log read/write operation."""
     model_config = {"from_attributes": True}
 
@@ -33,3 +33,9 @@ class LogResponse(BaseModel):
     amount                : float
     created_at            : datetime.datetime
     updated_at            : datetime.datetime | None
+
+
+# Backward-compatible aliases used by existing endpoint code.
+LogCreate = PaymentLogCreate
+LogUpdate = PaymentLogUpdate
+LogResponse = PaymentLogResponse

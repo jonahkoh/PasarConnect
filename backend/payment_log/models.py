@@ -22,7 +22,8 @@ class Base(DeclarativeBase):
 
 class PaymentStatus(str, enum.Enum):
     PENDING  = "PENDING"   # intent created, waiting for Stripe confirmation
-    SUCCESS  = "SUCCESS"   # charge confirmed, listing marked SOLD
+    SUCCESS  = "SUCCESS"   # charge confirmed (payment succeeded)
+    COLLECTED = "COLLECTED"  # item collection approved and completed
     REFUNDED = "REFUNDED"  # compensating transaction executed
     FAILED   = "FAILED"    # refund itself failed — requires manual ops
 

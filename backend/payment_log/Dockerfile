@@ -12,6 +12,13 @@ COPY payment_log/ ./payment_log/
 
 WORKDIR /app/payment_log
 
+## Generate gRPC stubs used for orchestrator->state-manager RPC updates
+RUN python -m grpc_tools.protoc \
+	-I./proto \
+	--python_out=. \
+	--grpc_python_out=. \
+	./proto/payment_log.proto
+
 EXPOSE 8005
 
 CMD ["uvicorn", "payment_log:app", "--host", "0.0.0.0", "--port", "8005"]
