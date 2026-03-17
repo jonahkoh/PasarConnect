@@ -31,3 +31,38 @@ async def lock_listing_pending_collection(listing_id: int, expected_version: int
             )
         )
     return response.new_version
+
+
+async def rollback_listing_to_available(listing_id: int, expected_version: int) -> int:
+    """
+    Compensating transaction helper.
+    Reverts PENDING_COLLECTION -> AVAILABLE when downstream claim logging fails.
+    Returns the new version after rollback.
+    """
+    async with grpc.aio.insecure_channel(INVENTORY_GRPC_ADDR) as channel:
+        stub = inventory_pb2_grpc.InventoryServiceStub(channel)
+        response = await stub.LockListing(
+            inventory_pb2.LockListingRequest(
+                listing_id=listing_id,
+                expected_version=expected_version,
+                new_status=inventory_pb2.AVAILABLE,
+            )
+        )
+    return response.new_version
+
+
+async def mark_listing_sold(listing_id: int, expected_version: int) -> int:
+    """
+    Finalize listing collection by transitioning PENDING_COLLECTION -> SOLD.
+    Returns the new version after the transition.
+    """
+    async with grpc.aio.insecure_channel(INVENTORY_GRPC_ADDR) as channel:
+        stub = inventory_pb2_grpc.InventoryServiceStub(channel)
+        response = await stub.LockListing(
+            inventory_pb2.LockListingRequest(
+                listing_id=listing_id,
+                expected_version=expected_version,
+                new_status=inventory_pb2.SOLD,
+            )
+        )
+    return response.new_version
