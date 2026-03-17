@@ -11,6 +11,7 @@ enum NewStatus {
   PENDING_PAYMENT       = 1;
   PENDING_COLLECTION    = 2;
   SOLD                  = 3;
+  SOLD_PENDING_COLLECTION = 4;
 }
 
 message LockListingRequest {
