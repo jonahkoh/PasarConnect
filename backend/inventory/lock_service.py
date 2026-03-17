@@ -4,6 +4,23 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from models import FoodListing, ListingStatus
 
 
+_ALLOWED_FROM_STATUSES: dict[ListingStatus, set[ListingStatus]] = {
+    ListingStatus.PENDING_PAYMENT: {ListingStatus.AVAILABLE},
+    ListingStatus.PENDING_COLLECTION: {ListingStatus.AVAILABLE, ListingStatus.PENDING_PAYMENT},
+    ListingStatus.SOLD_PENDING_COLLECTION: {ListingStatus.PENDING_PAYMENT},
+    ListingStatus.SOLD: {
+        ListingStatus.PENDING_PAYMENT,
+        ListingStatus.PENDING_COLLECTION,
+        ListingStatus.SOLD_PENDING_COLLECTION,
+    },
+    ListingStatus.AVAILABLE: {
+        ListingStatus.PENDING_PAYMENT,
+        ListingStatus.PENDING_COLLECTION,
+        ListingStatus.SOLD_PENDING_COLLECTION,
+    },
+}
+
+
 class LockConflictError(Exception):
     """The listing was modified by another request before we got to it."""
 
@@ -23,11 +40,16 @@ async def lock_listing(
     Returns the new version number on success.
     Raises LockConflictError or ListingNotFoundError on failure.
     """
+    allowed_from = _ALLOWED_FROM_STATUSES.get(new_status)
+    if not allowed_from:
+        raise LockConflictError(f"Unsupported transition target: {new_status}.")
+
     result = await db.execute(
         update(FoodListing)
         .where(
             FoodListing.id == listing_id,
             FoodListing.version == expected_version,
+            FoodListing.status.in_(allowed_from),
         )
         .values(
             status=new_status,
