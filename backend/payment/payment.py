@@ -23,14 +23,14 @@ Workflow 1 — Intent Creation (POST /payments/intent)
 
 Workflow 2 — Webhook Fulfillment (POST /webhooks/stripe)
   1. HTTP  → Payment Log: idempotency check
-  2. gRPC  → Inventory: hard lock listing (PENDING_PAYMENT → SOLD)
+  2. gRPC  → Inventory: move listing to pickup flow (PENDING_PAYMENT → PENDING_COLLECTION)
   3a. On gRPC failure — COMPENSATING TRANSACTION:
         HTTP → Stripe Wrapper: refund
         HTTP → Payment Log: set status=REFUNDED
         Publish payment.failure to RabbitMQ
         Return 503
   3b. On gRPC success:
-        HTTP → Payment Log: set status=SUCCESS
+      HTTP → Payment Log: set status=SUCCESS (payment completed)
         Publish payment.success to RabbitMQ
         Return 200
 """
@@ -44,6 +44,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 
 import inventory_client
+import payment_log_client
 import publisher
 from schemas import PaymentIntentRequest, StripeWebhookPayload
 
@@ -174,7 +175,7 @@ async def stripe_webhook(payload: StripeWebhookPayload):
             client,
             f"{PAYMENT_LOG_URL}/logs/{payload.stripe_transaction_id}",
         )
-        if log and log["status"] in ("SUCCESS", "REFUNDED"):
+        if log and log["status"] in ("SUCCESS", "COLLECTED", "REFUNDED"):
             logger.info(
                 "Duplicate webhook — transaction_id=%s already %s.",
                 payload.stripe_transaction_id, log["status"],
@@ -191,9 +192,9 @@ async def stripe_webhook(payload: StripeWebhookPayload):
 
         listing_version = log["listing_version"]
 
-        # ── Step 2: Hard lock the listing (PENDING_PAYMENT → SOLD) ───────────
+        # ── Step 2: Move to collection flow (PENDING_PAYMENT → PENDING_COLLECTION) ─
         try:
-            await inventory_client.mark_listing_sold(
+            await inventory_client.mark_listing_pending_collection(
                 payload.listing_id, listing_version
             )
 
@@ -273,4 +274,84 @@ async def stripe_webhook(payload: StripeWebhookPayload):
             payload.stripe_transaction_id, payload.listing_id,
         )
         return {"status": "ok", "transaction_id": payload.stripe_transaction_id}
+
+
+@app.post("/payments/{transaction_id}/approve")
+async def approve_payment(transaction_id: str):
+    import payment_log_pb2
+
+    try:
+        result = await payment_log_client.update_payment_status(
+            transaction_id=transaction_id,
+            new_status=payment_log_pb2.COLLECTED,
+        )
+    except grpc.aio.AioRpcError as exc:
+        raise payment_log_client.map_payment_log_grpc_error(exc)
+
+    try:
+        new_version = await inventory_client.mark_listing_sold(
+            listing_id=result.listing_id,
+            expected_version=result.listing_version,
+        )
+    except grpc.aio.AioRpcError:
+        raise HTTPException(status_code=503, detail="Inventory update failed after payment approval")
+
+    await publisher.publish_payment_success(
+        transaction_id=transaction_id,
+        listing_id=result.listing_id,
+    )
+
+    return {
+        "status": "ok",
+        "transaction_id": transaction_id,
+        "new_status": "COLLECTED",
+        "inventory_version": new_version,
+    }
+
+
+@app.post("/payments/{transaction_id}/reject")
+async def reject_payment(transaction_id: str):
+    import payment_log_pb2
+
+    try:
+        result = await payment_log_client.update_payment_status(
+            transaction_id=transaction_id,
+            new_status=payment_log_pb2.REFUNDED,
+        )
+    except grpc.aio.AioRpcError as exc:
+        raise payment_log_client.map_payment_log_grpc_error(exc)
+
+    async with httpx.AsyncClient() as client:
+        try:
+            await _post(
+                client,
+                f"{STRIPE_WRAPPER_URL}/stripe/refund",
+                {
+                    "payment_intent_id": transaction_id,
+                    "amount": result.amount,
+                },
+            )
+        except httpx.HTTPStatusError:
+            raise HTTPException(status_code=503, detail="Refund failed in Stripe Wrapper")
+
+    try:
+        new_version = await inventory_client.rollback_listing_to_available(
+            listing_id=result.listing_id,
+            expected_version=result.listing_version,
+        )
+    except grpc.aio.AioRpcError:
+        raise HTTPException(status_code=503, detail="Inventory rollback failed after payment rejection")
+
+    await publisher.publish_payment_failure(
+        transaction_id=transaction_id,
+        listing_id=result.listing_id,
+        reason="Payment manually rejected",
+    )
+
+    return {
+        "status": "ok",
+        "transaction_id": transaction_id,
+        "new_status": "REFUNDED",
+        "inventory_version": new_version,
+    }
 
