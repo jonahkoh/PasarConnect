@@ -114,6 +114,8 @@ services:
       RABBITMQ_HOST:        rabbitmq
       STRIPE_WRAPPER_URL:   http://stripe-wrapper:8004
       PAYMENT_LOG_URL:      http://payment-log-service:8005
+      PAYMENT_LOG_GRPC_HOST: payment-log-service
+      PAYMENT_LOG_GRPC_PORT: 50062
     depends_on:
       rabbitmq:
         condition: service_started
@@ -138,6 +140,8 @@ services:
       dockerfile: payment_log/Dockerfile
     ports:
       - "8005:8005"
+    expose:
+      - "50062"
     environment:
       DB_HOST:     payment-db
       DB_PORT:     5432
