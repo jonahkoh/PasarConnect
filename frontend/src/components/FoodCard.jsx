@@ -2,10 +2,13 @@ export default function FoodCard({
   item,
   onAction,
   isProcessing,
+  isDisabled = false,
   actionLabel = "Claim",
+  helperText = "",
+  cardClassName = "",
 }) {
   return (
-    <article className="food-card">
+    <article className={`food-card ${cardClassName}`.trim()}>
       <div className="food-card__media">
         <img
           className="food-card__image"
@@ -19,7 +22,7 @@ export default function FoodCard({
 
         <span
           className={`food-card__badge ${
-            item.badge === "Charity Priority" ? "badge--blue" : "badge--orange"
+            item.badge === "Available" ? "badge--green" : "badge--red"
           }`}
         >
           {item.badge}
@@ -40,12 +43,15 @@ export default function FoodCard({
         </div>
 
         <div className="food-card__footer">
-          <strong className="food-card__price">{item.priceLabel}</strong>
+          <div className="food-card__actions">
+            <strong className="food-card__price">{item.priceLabel}</strong>
+            {helperText && <span className="food-card__helper">{helperText}</span>}
+          </div>
 
           <button
             className="claim-btn"
             onClick={() => onAction(item)}
-            disabled={isProcessing || item.status !== "AVAILABLE"}
+            disabled={isProcessing || isDisabled || item.status !== "AVAILABLE"}
           >
             {isProcessing ? `${actionLabel}ing...` : actionLabel}
           </button>

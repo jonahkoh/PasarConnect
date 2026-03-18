@@ -11,6 +11,8 @@ export const mockPublicListings = [
     badge: "Available",
     charityWindow: "",
     status: "AVAILABLE",
+    category: "Prepared Meals",
+    pickupWindow: "Under 15 mins",
   },
   {
     id: 102,
@@ -24,6 +26,8 @@ export const mockPublicListings = [
     badge: "Available",
     charityWindow: "",
     status: "AVAILABLE",
+    category: "Fruit",
+    pickupWindow: "Flexible",
   },
   {
     id: 103,
@@ -37,6 +41,8 @@ export const mockPublicListings = [
     badge: "Available",
     charityWindow: "",
     status: "AVAILABLE",
+    category: "Bakery",
+    pickupWindow: "Under 30 mins",
   },
   {
     id: 104,
@@ -50,6 +56,8 @@ export const mockPublicListings = [
     badge: "Available",
     charityWindow: "",
     status: "AVAILABLE",
+    category: "Fresh Produce",
+    pickupWindow: "Under 30 mins",
   },
   {
     id: 105,
@@ -63,6 +71,8 @@ export const mockPublicListings = [
     badge: "Available",
     charityWindow: "",
     status: "AVAILABLE",
+    category: "Prepared Meals",
+    pickupWindow: "Under 15 mins",
   },
   {
     id: 106,
@@ -76,5 +86,7 @@ export const mockPublicListings = [
     badge: "Available",
     charityWindow: "",
     status: "AVAILABLE",
+    category: "Dairy & Soy",
+    pickupWindow: "Flexible",
   },
 ];
