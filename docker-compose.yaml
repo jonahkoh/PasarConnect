@@ -118,6 +118,8 @@ services:
       OUTSYSTEMS_API_KEY:      ${OUTSYSTEMS_API_KEY}
       OUTSYSTEMS_TIMEOUT_SECONDS: 5.0
       PUBLIC_KEY_PATH:         /app/keys/public.pem
+      MOCK_OUTSYSTEMS:            ${MOCK_OUTSYSTEMS:-false}
+      MOCK_OUTSYSTEMS_APPROVED:   ${MOCK_OUTSYSTEMS_APPROVED:-true}
     volumes:
       - ./keys:/app/keys:ro
 

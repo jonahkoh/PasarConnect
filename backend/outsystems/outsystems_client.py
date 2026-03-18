@@ -13,7 +13,8 @@ OUTSYSTEMS_API_KEY = os.getenv("OUTSYSTEMS_API_KEY", "")
 
 # Architecture contract: timeout → 503, never hang the claim flow
 _TIMEOUT_SECONDS = float(os.getenv("OUTSYSTEMS_TIMEOUT_SECONDS", "5.0"))
-
+MOCK_OUTSYSTEMS = os.getenv("MOCK_OUTSYSTEMS", "false").lower() == "true"
+MOCK_OUTSYSTEMS_APPROVED = os.getenv("MOCK_OUTSYSTEMS_APPROVED", "true").lower() == "true"
 
 class OutSystemsVerificationError(Exception):
     """Raised when OutSystems is unreachable or returns an unexpected status."""
@@ -23,6 +24,17 @@ async def check_charity_eligibility(
     charity_id: int,
     listing_id: int,
 ) -> tuple[bool, str]:
+    if MOCK_OUTSYSTEMS:
+        approved = MOCK_OUTSYSTEMS_APPROVED
+        reason = "" if approved else "MISSING_WAIVER"
+        logger.info(
+            "MOCK OutSystems check charity_id=%s listing_id=%s approved=%s reason=%s",
+            charity_id,
+            listing_id,
+            approved,
+            reason,
+        )
+        return approved, reason
     """
     Calls the OutSystems REST endpoint to check waiver status.
 
