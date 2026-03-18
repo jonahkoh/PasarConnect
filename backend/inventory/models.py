@@ -9,6 +9,7 @@ class ListingStatus(str, enum.Enum):
     AVAILABLE          = "AVAILABLE"
     PENDING_PAYMENT    = "PENDING_PAYMENT"
     PENDING_COLLECTION = "PENDING_COLLECTION"
+    SOLD_PENDING_COLLECTION = "SOLD_PENDING_COLLECTION"
     SOLD               = "SOLD"
 
 

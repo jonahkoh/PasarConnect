@@ -16,6 +16,7 @@ from fastapi import FastAPI, HTTPException
 
 import inventory_client
 import publisher
+import claim_log_client
 from schemas import ClaimCreate, ClaimResponse
 
 load_dotenv()
@@ -27,8 +28,6 @@ VERIFICATION_GRPC_PORT = os.getenv("VERIFICATION_GRPC_PORT", "50052")
 VERIFICATION_GRPC_ADDR = f"{VERIFICATION_GRPC_HOST}:{VERIFICATION_GRPC_PORT}"
 
 CLAIM_LOG_URL = os.getenv("CLAIM_LOG_URL", "http://localhost:8006")
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Stateless service: no startup DB work required.
@@ -144,3 +143,78 @@ async def create_claim(body: ClaimCreate):
     )
 
     return claim_record
+
+
+@app.post("/claims/{claim_id}/arrive")
+async def arrive_claim(claim_id: int):
+    import claim_log_pb2
+
+    try:
+        result = await claim_log_client.update_claim_status(
+            claim_id=claim_id,
+            new_status=claim_log_pb2.AWAITING_VENDOR_APPROVAL,
+        )
+    except grpc.aio.AioRpcError as exc:
+        raise claim_log_client.map_claim_log_grpc_error(exc)
+
+    return {
+        "status": "ok",
+        "claim_id": result.claim_id,
+        "new_status": "AWAITING_VENDOR_APPROVAL",
+    }
+
+
+@app.post("/claims/{claim_id}/approve")
+async def approve_claim(claim_id: int):
+    import claim_log_pb2
+
+    try:
+        result = await claim_log_client.update_claim_status(
+            claim_id=claim_id,
+            new_status=claim_log_pb2.COMPLETED,
+        )
+    except grpc.aio.AioRpcError as exc:
+        raise claim_log_client.map_claim_log_grpc_error(exc)
+
+    try:
+        new_version = await inventory_client.mark_listing_sold(
+            listing_id=result.listing_id,
+            expected_version=result.listing_version,
+        )
+    except grpc.aio.AioRpcError:
+        raise HTTPException(status_code=503, detail="Inventory update failed after claim approval")
+
+    return {
+        "status": "ok",
+        "claim_id": result.claim_id,
+        "new_status": "COMPLETED",
+        "inventory_version": new_version,
+    }
+
+
+@app.post("/claims/{claim_id}/reject")
+async def reject_claim(claim_id: int):
+    import claim_log_pb2
+
+    try:
+        result = await claim_log_client.update_claim_status(
+            claim_id=claim_id,
+            new_status=claim_log_pb2.CANCELLED,
+        )
+    except grpc.aio.AioRpcError as exc:
+        raise claim_log_client.map_claim_log_grpc_error(exc)
+
+    try:
+        new_version = await inventory_client.rollback_listing_to_available(
+            listing_id=result.listing_id,
+            expected_version=result.listing_version,
+        )
+    except grpc.aio.AioRpcError:
+        raise HTTPException(status_code=503, detail="Inventory rollback failed after claim rejection")
+
+    return {
+        "status": "ok",
+        "claim_id": result.claim_id,
+        "new_status": "CANCELLED",
+        "inventory_version": new_version,
+    }

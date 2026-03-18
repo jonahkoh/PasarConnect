@@ -60,6 +60,11 @@ async def mark_listing_sold(listing_id: int, expected_version: int) -> int:
     return await _lock_listing(listing_id, expected_version, inventory_pb2.SOLD)
 
 
+async def mark_listing_pending_collection(listing_id: int, expected_version: int) -> int:
+    """Transitions PENDING_PAYMENT → PENDING_COLLECTION after payment succeeds."""
+    return await _lock_listing(listing_id, expected_version, inventory_pb2.PENDING_COLLECTION)
+
+
 async def rollback_listing_to_available(listing_id: int, expected_version: int) -> int:
     """Transitions PENDING_PAYMENT → AVAILABLE.  Used when a payment is cancelled."""
     return await _lock_listing(listing_id, expected_version, inventory_pb2.AVAILABLE)

@@ -18,7 +18,7 @@ services:
       timeout: 5s
       retries: 10
 
-  claim-db:
+  claim-log-db:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER:     postgres
@@ -27,14 +27,14 @@ services:
     ports:
       - "5434:5432"
     volumes:
-      - claim-db-data:/var/lib/postgresql/data
+      - claim-log-db-data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d claim_db"]
       interval: 5s
       timeout: 5s
       retries: 10
 
-  payment-db:
+  payment-log-db:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER:     postgres
@@ -43,7 +43,7 @@ services:
     ports:
       - "5435:5432"
     volumes:
-      - payment-db-data:/var/lib/postgresql/data
+      - payment-log-db-data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d payment_db"]
       interval: 5s
@@ -87,6 +87,8 @@ services:
       INVENTORY_GRPC_HOST:  inventory-service
       INVENTORY_GRPC_PORT:  50051
       CLAIM_LOG_URL:        http://claim-log-service:8006
+      CLAIM_LOG_GRPC_HOST:  claim-log-service
+      CLAIM_LOG_GRPC_PORT:  50061
       RABBITMQ_HOST:        rabbitmq
     depends_on:
       rabbitmq:
@@ -102,14 +104,16 @@ services:
       dockerfile: claim_log/Dockerfile
     ports:
       - "8006:8006"
+    expose:
+      - "50061"
     environment:
-      DB_HOST:     claim-db
+      DB_HOST:     claim-log-db
       DB_PORT:     5432
       DB_USER:     postgres
       DB_PASSWORD: postgres
       DB_NAME:     claim_db
     depends_on:
-      claim-db:
+      claim-log-db:
         condition: service_healthy
 
   payment-service:
@@ -125,7 +129,8 @@ services:
       INVENTORY_GRPC_PORT:  50051
       RABBITMQ_HOST:        rabbitmq
       STRIPE_WRAPPER_URL:   http://stripe-wrapper:8004
-      PAYMENT_LOG_URL:      http://payment-log-service:8005
+      PAYMENT_LOG_GRPC_HOST: payment-log-service
+      PAYMENT_LOG_GRPC_PORT: 50062
     depends_on:
       rabbitmq:
         condition: service_started
@@ -150,17 +155,19 @@ services:
       dockerfile: payment_log/Dockerfile
     ports:
       - "8005:8005"
+    expose:
+      - "50062"
     environment:
-      DB_HOST:     payment-db
+      DB_HOST:     payment-log-db
       DB_PORT:     5432
       DB_USER:     postgres
       DB_PASSWORD: postgres
       DB_NAME:     payment_db
     depends_on:
-      payment-db:
+      payment-log-db:
         condition: service_healthy
 
 volumes:
   inventory-db-data:
-  claim-db-data:
-  payment-db-data:
+  claim-log-db-data:
+  payment-log-db-data:

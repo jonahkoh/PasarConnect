@@ -1,7 +1,7 @@
 from contextlib import asynccontextmanager
 from typing import List
 from fastapi import Depends, FastAPI, HTTPException, Path, Query
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 import geohash2
 
@@ -15,6 +15,19 @@ from schemas import FoodListingCreate, FoodListingUpdate, FoodListingResponse
 async def lifespan(app: FastAPI):
     # Auto-create tables on startup
     async with database.engine.begin() as conn:
+        await conn.execute(
+            text(
+                """
+                DO $$
+                BEGIN
+                    IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'listing_status_enum') THEN
+                        ALTER TYPE listing_status_enum ADD VALUE IF NOT EXISTS 'SOLD_PENDING_COLLECTION';
+                    END IF;
+                END
+                $$;
+                """
+            )
+        )
         await conn.run_sync(Base.metadata.create_all)
 
     # Start the gRPC server alongside the HTTP server (same process, same event loop)

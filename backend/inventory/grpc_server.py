@@ -14,6 +14,7 @@ _STATUS_MAP = {
     inventory_pb2.AVAILABLE:          ListingStatus.AVAILABLE,
     inventory_pb2.PENDING_PAYMENT:    ListingStatus.PENDING_PAYMENT,
     inventory_pb2.PENDING_COLLECTION: ListingStatus.PENDING_COLLECTION,
+    inventory_pb2.SOLD_PENDING_COLLECTION: ListingStatus.SOLD_PENDING_COLLECTION,
     inventory_pb2.SOLD:               ListingStatus.SOLD,
 }
 
