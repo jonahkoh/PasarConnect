@@ -16,6 +16,10 @@ from fastapi import FastAPI, HTTPException
 
 import inventory_client
 import publisher
+from typing import Annotated
+from fastapi import Depends
+from verification_client import CharityNotEligibleError, verify_charity
+from shared.jwt_auth import verify_jwt_token
 import claim_log_client
 from schemas import ClaimCreate, ClaimResponse
 
@@ -46,19 +50,34 @@ async def health():
 
 async def _verify_claim_eligibility(charity_id: int, listing_id: int) -> None:
     """
-    Verification gRPC call placeholder.
-
-    Contract: raises HTTPException(403) when charity is not eligible.
-    For now, the service is assumed to return VALID as requested.
+    Calls Verification Service via gRPC → OutSystems REST.
+    Raises HTTP 403 if charity is ineligible (e.g. MISSING_WAIVER).
+    Raises HTTP 503 if Verification Service is unreachable.
     """
-    # This hook keeps orchestration flow explicit and ready for the real proto.
-    logger.info(
-        "Verification assumed VALID for charity_id=%s listing_id=%s via %s",
-        charity_id,
-        listing_id,
-        VERIFICATION_GRPC_ADDR,
-    )
+    try:
+        await verify_charity(charity_id=charity_id, listing_id=listing_id)
+    except CharityNotEligibleError as exc:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error": "charity_not_eligible",
+                "reason": exc.reason,
+            },
+        )
 
+# async def _verify_claim_eligibility(charity_id: int, listing_id: int) -> None:
+#     """
+#     Verification gRPC call placeholder.
+#     Contract: raises HTTPException(403) when charity is not eligible.
+#     For now, the service is assumed to return VALID as requested.
+#     """
+#     # This hook keeps orchestration flow explicit and ready for the real proto.
+#     logger.info(
+#         "Verification assumed VALID for charity_id=%s listing_id=%s via %s",
+#         charity_id,
+#         listing_id,
+#         VERIFICATION_GRPC_ADDR,
+#     ) old _verify_claim_eligibility()
 
 async def _post(client: httpx.AsyncClient, url: str, body: dict) -> dict:
     response = await client.post(url, json=body, timeout=10.0)
@@ -66,8 +85,13 @@ async def _post(client: httpx.AsyncClient, url: str, body: dict) -> dict:
     return response.json()
 
 
+# @app.post("/claims", response_model=ClaimResponse, status_code=201)
+# async def create_claim(body: ClaimCreate): old code
 @app.post("/claims", response_model=ClaimResponse, status_code=201)
-async def create_claim(body: ClaimCreate):
+async def create_claim(
+    body: ClaimCreate,
+    token_payload: Annotated[dict, Depends(verify_jwt_token)],
+):
     # 1) Verify eligibility via Verification Service (assumed VALID).
     await _verify_claim_eligibility(body.charity_id, body.listing_id)
 
