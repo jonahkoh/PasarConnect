@@ -129,7 +129,6 @@ services:
       INVENTORY_GRPC_PORT:  50051
       RABBITMQ_HOST:        rabbitmq
       STRIPE_WRAPPER_URL:   http://stripe-wrapper:8004
-      PAYMENT_LOG_URL:      http://payment-log-service:8005
       PAYMENT_LOG_GRPC_HOST: payment-log-service
       PAYMENT_LOG_GRPC_PORT: 50062
     depends_on:

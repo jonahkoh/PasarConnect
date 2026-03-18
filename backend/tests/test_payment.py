@@ -3,7 +3,8 @@ Payment Orchestrator tests.
 
 All downstream calls are mocked:
 - inventory_client gRPC calls
-- internal HTTP helpers (_get/_post/_patch)
+- payment_log_client gRPC calls
+- internal HTTP helper (_post)
 - RabbitMQ publisher functions
 """
 
@@ -40,7 +41,28 @@ async def payment_client():
     # Stub generated gRPC modules so tests do not require protoc output.
     sys.modules.setdefault("inventory_pb2", MagicMock())
     sys.modules.setdefault("inventory_pb2_grpc", MagicMock())
-    sys.modules.setdefault("payment_log_pb2", MagicMock())
+    if "payment_log_pb2" not in sys.modules:
+        payment_log_pb2 = MagicMock()
+        payment_log_pb2.PENDING = 1
+        payment_log_pb2.SUCCESS = 2
+        payment_log_pb2.COLLECTED = 3
+        payment_log_pb2.REFUNDED = 4
+        payment_log_pb2.FAILED = 5
+
+        class _PaymentStatus:
+            @staticmethod
+            def Name(value):
+                names = {
+                    1: "PENDING",
+                    2: "SUCCESS",
+                    3: "COLLECTED",
+                    4: "REFUNDED",
+                    5: "FAILED",
+                }
+                return names.get(value, "PAYMENT_STATUS_UNSPECIFIED")
+
+        payment_log_pb2.PaymentStatus = _PaymentStatus
+        sys.modules["payment_log_pb2"] = payment_log_pb2
     sys.modules.setdefault("payment_log_pb2_grpc", MagicMock())
 
     spec = _ilu.spec_from_file_location("payment_app", os.path.join(PAYMENT_DIR, "payment.py"))
@@ -52,23 +74,17 @@ async def payment_client():
         patch.object(payment_mod.inventory_client, "mark_listing_sold", new_callable=AsyncMock) as mock_mark_sold,
         patch.object(payment_mod.inventory_client, "mark_listing_pending_collection", new_callable=AsyncMock) as mock_mark_pending_collection,
         patch.object(payment_mod.inventory_client, "rollback_listing_to_available", new_callable=AsyncMock) as mock_mark_available,
-        patch.object(payment_mod.payment_log_client, "update_payment_status", new_callable=AsyncMock) as mock_update_payment_status,
+        patch.object(payment_mod.payment_log_client, "create_payment_log", new_callable=AsyncMock) as mock_create_payment_log,
+        patch.object(payment_mod.payment_log_client, "get_payment_log", new_callable=AsyncMock) as mock_get_payment_log,
+        patch.object(payment_mod.payment_log_client, "update_payment_status_with_version", new_callable=AsyncMock) as mock_update_payment_status,
         patch.object(payment_mod.publisher, "publish_payment_success", new_callable=AsyncMock) as mock_publish_success,
         patch.object(payment_mod.publisher, "publish_payment_failure", new_callable=AsyncMock) as mock_publish_failure,
         patch.object(payment_mod, "_post", new_callable=AsyncMock) as mock_post,
-        patch.object(payment_mod, "_get", new_callable=AsyncMock) as mock_get,
-        patch.object(payment_mod, "_patch", new_callable=AsyncMock) as mock_patch,
     ):
         mock_soft_lock.return_value = 7
         mock_mark_sold.return_value = 10
         mock_mark_pending_collection.return_value = 9
         mock_mark_available.return_value = 8
-        mock_update_payment_status.return_value = SimpleNamespace(
-            transaction_id="pi_mock_approve",
-            listing_id=222,
-            listing_version=5,
-            amount=42.5,
-        )
 
         async def _post_side_effect(_client, url, _body):
             if url.endswith("/stripe/intent"):
@@ -83,7 +99,12 @@ async def payment_client():
             return {}
 
         mock_post.side_effect = _post_side_effect
-        mock_patch.return_value = {"status": "SUCCESS"}
+        mock_get_payment_log.return_value = SimpleNamespace(
+            status=2,
+            listing_id=222,
+            listing_version=5,
+            amount=42.5,
+        )
 
         client = AsyncClient(
             transport=ASGITransport(app=payment_mod.app),
@@ -96,12 +117,12 @@ async def payment_client():
                 "mock_mark_sold": mock_mark_sold,
                 "mock_mark_pending_collection": mock_mark_pending_collection,
                 "mock_mark_available": mock_mark_available,
+                "mock_create_payment_log": mock_create_payment_log,
+                "mock_get_payment_log": mock_get_payment_log,
                 "mock_update_payment_status": mock_update_payment_status,
                 "mock_publish_success": mock_publish_success,
                 "mock_publish_failure": mock_publish_failure,
-                "mock_get": mock_get,
                 "mock_post": mock_post,
-                "mock_patch": mock_patch,
             }
         finally:
             await client.aclose()
@@ -123,15 +144,22 @@ async def test_create_payment_intent_success(payment_client):
     assert response.status_code == 201
     assert response.json() == {"client_secret": "pi_mock_123_secret"}
     payment_client["mock_soft_lock"].assert_called_once_with(101, 3)
-    assert payment_client["mock_post"].call_count == 2
+    payment_client["mock_post"].assert_called_once()
+    payment_client["mock_create_payment_log"].assert_called_once_with(
+        transaction_id="pi_mock_123",
+        listing_id=101,
+        listing_version=7,
+        amount=20.5,
+    )
 
 
 @pytest.mark.asyncio
 async def test_webhook_already_processed(payment_client):
-    payment_client["mock_get"].return_value = {
-        "status": "SUCCESS",
-        "listing_version": 7,
-    }
+    payment_client["mock_get_payment_log"].return_value = SimpleNamespace(
+        status=2,
+        listing_version=7,
+        amount=20.5,
+    )
 
     payload = {
         "stripe_transaction_id": "pi_mock_123",
@@ -147,10 +175,11 @@ async def test_webhook_already_processed(payment_client):
 
 @pytest.mark.asyncio
 async def test_webhook_success_path(payment_client):
-    payment_client["mock_get"].return_value = {
-        "status": "PENDING",
-        "listing_version": 9,
-    }
+    payment_client["mock_get_payment_log"].return_value = SimpleNamespace(
+        status=1,
+        listing_version=9,
+        amount=30.0,
+    )
 
     payload = {
         "stripe_transaction_id": "pi_mock_456",
@@ -162,7 +191,11 @@ async def test_webhook_success_path(payment_client):
     assert response.status_code == 200
     assert response.json() == {"status": "ok", "transaction_id": "pi_mock_456"}
     payment_client["mock_mark_pending_collection"].assert_called_once_with(202, 9)
-    payment_client["mock_patch"].assert_called_once()
+    payment_client["mock_update_payment_status"].assert_called_once_with(
+        transaction_id="pi_mock_456",
+        new_status=2,
+        listing_version=9,
+    )
     payment_client["mock_publish_success"].assert_called_once_with(
         transaction_id="pi_mock_456",
         listing_id=202,
@@ -171,10 +204,11 @@ async def test_webhook_success_path(payment_client):
 
 @pytest.mark.asyncio
 async def test_webhook_grpc_failure_triggers_refund_and_failure_event(payment_client):
-    payment_client["mock_get"].return_value = {
-        "status": "PENDING",
-        "listing_version": 2,
-    }
+    payment_client["mock_get_payment_log"].return_value = SimpleNamespace(
+        status=1,
+        listing_version=2,
+        amount=45.0,
+    )
     payment_client["mock_mark_pending_collection"].side_effect = FakeAioRpcError(
         grpc.StatusCode.UNAVAILABLE,
         "inventory unavailable",
@@ -197,7 +231,10 @@ async def test_webhook_grpc_failure_triggers_refund_and_failure_event(payment_cl
 
 @pytest.mark.asyncio
 async def test_webhook_log_missing_returns_404(payment_client):
-    payment_client["mock_get"].return_value = None
+    payment_client["mock_get_payment_log"].side_effect = FakeAioRpcError(
+        grpc.StatusCode.NOT_FOUND,
+        "not found",
+    )
 
     payload = {
         "stripe_transaction_id": "pi_missing",
@@ -207,7 +244,26 @@ async def test_webhook_log_missing_returns_404(payment_client):
     response = await payment_client["client"].post("/webhooks/stripe", json=payload)
 
     assert response.status_code == 404
-    assert "Payment record not found" in response.json()["detail"]
+    assert "Payment transaction not found" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_webhook_amount_mismatch_returns_400(payment_client):
+    payment_client["mock_get_payment_log"].return_value = SimpleNamespace(
+        status=1,
+        listing_version=2,
+        amount=99.0,
+    )
+
+    payload = {
+        "stripe_transaction_id": "pi_amount_mismatch",
+        "listing_id": 303,
+        "amount": 45.0,
+    }
+    response = await payment_client["client"].post("/webhooks/stripe", json=payload)
+
+    assert response.status_code == 400
+    assert response.json()["detail"]["error"] == "amount_mismatch"
 
 
 @pytest.mark.asyncio
@@ -216,10 +272,11 @@ async def test_approve_payment_success(payment_client):
 
     assert response.status_code == 200
     assert response.json()["new_status"] == "COLLECTED"
-    payment_client["mock_update_payment_status"].assert_called_once()
+    payment_client["mock_get_payment_log"].assert_called_once()
+        listing_version=10,
+    )
     payment_client["mock_mark_sold"].assert_called_once_with(listing_id=222, expected_version=5)
     payment_client["mock_publish_success"].assert_called()
-
 
 @pytest.mark.asyncio
 async def test_reject_payment_success(payment_client):
@@ -227,6 +284,10 @@ async def test_reject_payment_success(payment_client):
 
     assert response.status_code == 200
     assert response.json()["new_status"] == "REFUNDED"
-    payment_client["mock_update_payment_status"].assert_called_once()
+    payment_client["mock_get_payment_log"].assert_called_once()
+    payment_client["mock_update_payment_status"].assert_called_once_with(
+        transaction_id="pi_mock_approve",
+        new_status=4,
+    )
     payment_client["mock_mark_available"].assert_called_once_with(listing_id=222, expected_version=5)
     payment_client["mock_publish_failure"].assert_called()
