@@ -11,10 +11,33 @@ class FoodListingCreate(BaseModel):
     description: Optional[str] = Field(None, max_length=1024)
     quantity: int = Field(..., gt=0)
     expiry_date: datetime
+    latitude: Optional[float] = Field(None, ge=-90, le=90)
+    longitude: Optional[float] = Field(None, ge=-180, le=180)
 
     @field_validator("expiry_date")
     @classmethod
     def must_be_future(cls, v: datetime) -> datetime:
+        v_utc = v if v.tzinfo else v.replace(tzinfo=timezone.utc)
+        if v_utc <= datetime.now(tz=timezone.utc):
+            raise ValueError("expiry_date must be in the future")
+        return v
+
+
+# What the client sends when updating a listing (all fields optional)
+class FoodListingUpdate(BaseModel):
+    title: Optional[str] = Field(None, min_length=1, max_length=255)
+    description: Optional[str] = Field(None, max_length=1024)
+    quantity: Optional[int] = Field(None, gt=0)
+    expiry_date: Optional[datetime] = None
+    status: Optional[ListingStatus] = None
+    latitude: Optional[float] = Field(None, ge=-90, le=90)
+    longitude: Optional[float] = Field(None, ge=-180, le=180)
+
+    @field_validator("expiry_date")
+    @classmethod
+    def must_be_future(cls, v: Optional[datetime]) -> Optional[datetime]:
+        if v is None:
+            return v
         v_utc = v if v.tzinfo else v.replace(tzinfo=timezone.utc)
         if v_utc <= datetime.now(tz=timezone.utc):
             raise ValueError("expiry_date must be in the future")
@@ -31,7 +54,11 @@ class FoodListingResponse(BaseModel):
     expiry_date: datetime
     status: ListingStatus
     version: int
+    latitude: Optional[float]
+    longitude: Optional[float]
+    geohash: Optional[str]
     created_at: datetime
     updated_at: Optional[datetime]
 
     model_config = {"from_attributes": True}
+
