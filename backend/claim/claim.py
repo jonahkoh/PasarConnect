@@ -8,6 +8,8 @@ Claim Log (HTTP), and RabbitMQ.
 import logging
 import os
 from contextlib import asynccontextmanager
+import verification_client
+
 
 import grpc
 import httpx
@@ -69,8 +71,12 @@ async def _post(client: httpx.AsyncClient, url: str, body: dict) -> dict:
 
 @app.post("/claims", response_model=ClaimResponse, status_code=201)
 async def create_claim(body: ClaimCreate):
-    # 1) Verify eligibility via Verification Service (assumed VALID).
-    await _verify_claim_eligibility(body.charity_id, body.listing_id)
+    # 1) Verify eligibility via Verification Service (gRPC quota check).
+    valid, reason = await verification_client.verify_charity_eligibility(body.charity_id)
+    if not valid:
+        raise HTTPException(status_code=403, detail=reason)
+
+    
 
     # 2) Soft lock listing in Inventory.
     try:

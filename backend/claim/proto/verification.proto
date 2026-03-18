@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package verification;
+
+service Verification {
+  rpc VerifyCharity (VerifyRequest) returns (VerifyResponse);
+}
+
+message VerifyRequest {
+  int32 charity_id = 1;
+}
+
+message VerifyResponse {
+  bool valid = 1;
+  string reason = 2;
+}

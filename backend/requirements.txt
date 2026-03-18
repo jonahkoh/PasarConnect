@@ -14,6 +14,8 @@ python-dotenv==1.0.1
 # gRPC (Inventory gRPC server + clients in Claim/Payment services)
 grpcio==1.67.1
 grpcio-tools==1.67.1
+grpcio==1.66.1
+grpcio-tools==1.66.1
 
 # RabbitMQ (Claim/Notification/Auditor event publishing)
 pika==1.3.2
