@@ -101,7 +101,7 @@ async def update_listing(
     
     # Recalculate geohash if location was updated
     if listing.latitude is not None and listing.longitude is not None:
-        listing.geohash = geohash2.encode(listing.latitude, listing.longitude, precision=9)
+        listing.geohash = geohash2.encode(listing.latitude, listing.longitude, precision=6)
     
     listing.version += 1
     await db.commit()
