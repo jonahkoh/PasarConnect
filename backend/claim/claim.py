@@ -24,10 +24,6 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-VERIFICATION_GRPC_HOST = os.getenv("VERIFICATION_GRPC_HOST", "localhost")
-VERIFICATION_GRPC_PORT = os.getenv("VERIFICATION_GRPC_PORT", "50052")
-VERIFICATION_GRPC_ADDR = f"{VERIFICATION_GRPC_HOST}:{VERIFICATION_GRPC_PORT}"
-
 CLAIM_LOG_URL = os.getenv("CLAIM_LOG_URL", "http://localhost:8006")
 
 
@@ -47,22 +43,6 @@ async def health():
     return {"status": "healthy", "service": "claim"}
 
 
-async def _verify_claim_eligibility(charity_id: int, listing_id: int) -> None:
-    """
-    Verification gRPC call placeholder.
-
-    Contract: raises HTTPException(403) when charity is not eligible.
-    For now, the service is assumed to return VALID as requested.
-    """
-    # This hook keeps orchestration flow explicit and ready for the real proto.
-    logger.info(
-        "Verification assumed VALID for charity_id=%s listing_id=%s via %s",
-        charity_id,
-        listing_id,
-        VERIFICATION_GRPC_ADDR,
-    )
-
-
 async def _post(client: httpx.AsyncClient, url: str, body: dict) -> dict:
     response = await client.post(url, json=body, timeout=10.0)
     response.raise_for_status()
@@ -72,7 +52,7 @@ async def _post(client: httpx.AsyncClient, url: str, body: dict) -> dict:
 @app.post("/claims", response_model=ClaimResponse, status_code=201)
 async def create_claim(body: ClaimCreate):
     # 1) Verify eligibility via Verification Service (gRPC quota check).
-    valid, reason = await verification_client.verify_charity_eligibility(body.charity_id)
+    valid, reason = await verification_client.verify_charity_eligibility(body.charity_id, body.listing_id)
     if not valid:
         raise HTTPException(status_code=403, detail=reason)
 

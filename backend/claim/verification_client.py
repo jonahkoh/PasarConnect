@@ -10,7 +10,7 @@ VERIFICATION_GRPC_PORT = os.getenv("VERIFICATION_GRPC_PORT", "50052")
 VERIFICATION_GRPC_ADDR = f"{VERIFICATION_GRPC_HOST}:{VERIFICATION_GRPC_PORT}"
 
 
-async def verify_charity_eligibility(charity_id: int) -> tuple[bool, str]:
+async def verify_charity_eligibility(charity_id: int, listing_id: int) -> tuple[bool, str]:
     """
     Calls Verification Service over gRPC to check:
     - legal status
@@ -20,5 +20,5 @@ async def verify_charity_eligibility(charity_id: int) -> tuple[bool, str]:
     """
     async with grpc.aio.insecure_channel(VERIFICATION_GRPC_ADDR) as channel:
         stub = VerificationStub(channel)
-        resp = await stub.VerifyCharity(VerifyRequest(charity_id=charity_id))
+        resp = await stub.VerifyCharity(VerifyRequest(charity_id=charity_id, listing_id=listing_id))
         return resp.valid, resp.reason
