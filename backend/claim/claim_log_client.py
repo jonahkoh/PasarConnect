@@ -1,6 +1,6 @@
 """
-Thin async gRPC client for Claim Log status updates.
-Used by handshake endpoints in claim orchestrator.
+Thin async gRPC client for Claim Log operations.
+Used by claim orchestrator create + handshake endpoints.
 """
 import os
 
@@ -13,6 +13,22 @@ load_dotenv()
 CLAIM_LOG_GRPC_HOST = os.getenv("CLAIM_LOG_GRPC_HOST", "localhost")
 CLAIM_LOG_GRPC_PORT = os.getenv("CLAIM_LOG_GRPC_PORT", "50061")
 CLAIM_LOG_GRPC_ADDR = f"{CLAIM_LOG_GRPC_HOST}:{CLAIM_LOG_GRPC_PORT}"
+
+
+async def create_claim_log(listing_id: int, charity_id: int, listing_version: int, status: int):
+    import claim_log_pb2
+    import claim_log_pb2_grpc
+
+    async with grpc.aio.insecure_channel(CLAIM_LOG_GRPC_ADDR) as channel:
+        stub = claim_log_pb2_grpc.ClaimLogServiceStub(channel)
+        return await stub.CreateClaimLog(
+            claim_log_pb2.CreateClaimLogRequest(
+                listing_id=listing_id,
+                charity_id=charity_id,
+                listing_version=listing_version,
+                status=status,
+            )
+        )
 
 
 async def update_claim_status(claim_id: int, new_status: int):

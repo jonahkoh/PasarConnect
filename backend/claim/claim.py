@@ -3,14 +3,14 @@ Claim Service — Orchestrator.
 
 This service is intentionally stateless: no local DB and no ORM models.
 It coordinates the workflow across Verification (gRPC), Inventory (gRPC),
-Claim Log (HTTP), and RabbitMQ.
+Claim Log (gRPC), and RabbitMQ.
 """
 import logging
 import os
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 
 import grpc
-import httpx
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 
@@ -27,7 +27,7 @@ VERIFICATION_GRPC_HOST = os.getenv("VERIFICATION_GRPC_HOST", "localhost")
 VERIFICATION_GRPC_PORT = os.getenv("VERIFICATION_GRPC_PORT", "50052")
 VERIFICATION_GRPC_ADDR = f"{VERIFICATION_GRPC_HOST}:{VERIFICATION_GRPC_PORT}"
 
-CLAIM_LOG_URL = os.getenv("CLAIM_LOG_URL", "http://localhost:8006")
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Stateless service: no startup DB work required.
@@ -60,12 +60,6 @@ async def _verify_claim_eligibility(charity_id: int, listing_id: int) -> None:
     )
 
 
-async def _post(client: httpx.AsyncClient, url: str, body: dict) -> dict:
-    response = await client.post(url, json=body, timeout=10.0)
-    response.raise_for_status()
-    return response.json()
-
-
 @app.post("/claims", response_model=ClaimResponse, status_code=201)
 async def create_claim(body: ClaimCreate):
     # 1) Verify eligibility via Verification Service (assumed VALID).
@@ -87,18 +81,15 @@ async def create_claim(body: ClaimCreate):
 
     # 3) Persist to Claim Log service. If this fails, rollback inventory lock.
     try:
-        async with httpx.AsyncClient() as client:
-            claim_record = await _post(
-                client,
-                f"{CLAIM_LOG_URL}/logs",
-                {
-                    "listing_id": body.listing_id,
-                    "charity_id": body.charity_id,
-                    "listing_version": new_version,
-                    "status": "PENDING_COLLECTION",
-                },
-            )
-    except (httpx.TimeoutException, httpx.HTTPError) as exc:
+        import claim_log_pb2
+
+        claim_record = await claim_log_client.create_claim_log(
+            listing_id=body.listing_id,
+            charity_id=body.charity_id,
+            listing_version=new_version,
+            status=claim_log_pb2.PENDING_COLLECTION,
+        )
+    except grpc.aio.AioRpcError as exc:
         logger.error(
             "Claim Log handoff failed after inventory lock listing_id=%s version=%s: %s",
             body.listing_id,
@@ -137,12 +128,20 @@ async def create_claim(body: ClaimCreate):
 
     # 4) Publish success event (best effort).
     await publisher.publish_claim_success(
-        claim_id=claim_record["id"],
-        listing_id=claim_record["listing_id"],
-        charity_id=claim_record["charity_id"],
+        claim_id=claim_record.id,
+        listing_id=claim_record.listing_id,
+        charity_id=claim_record.charity_id,
     )
 
-    return claim_record
+    return {
+        "id": claim_record.id,
+        "listing_id": claim_record.listing_id,
+        "charity_id": claim_record.charity_id,
+        "listing_version": claim_record.listing_version,
+        "status": claim_log_pb2.ClaimStatus.Name(claim_record.status),
+        "created_at": getattr(claim_record, "created_at", datetime.now(timezone.utc)),
+        "updated_at": getattr(claim_record, "updated_at", None),
+    }
 
 
 @app.post("/claims/{claim_id}/arrive")
