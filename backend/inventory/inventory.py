@@ -7,6 +7,7 @@ import geohash2
 
 import database
 from database import Base, get_db
+from geocoding import GeocodingError, geocode_address
 from grpc_server import start_grpc_server
 from models import FoodListing, ListingStatus
 from schemas import FoodListingCreate, FoodListingUpdate, FoodListingResponse
@@ -72,11 +73,16 @@ async def create_listing(
     db: AsyncSession = Depends(get_db),
 ):
     new_listing = FoodListing(**payload.model_dump())
-    
-    # Calculate geohash if location is provided (use precision 6 for better search matching)
-    if new_listing.latitude is not None and new_listing.longitude is not None:
-        new_listing.geohash = geohash2.encode(new_listing.latitude, new_listing.longitude, precision=6)
-    
+
+    if payload.address:
+        try:
+            lat, lng = await geocode_address(payload.address)
+            new_listing.latitude = lat
+            new_listing.longitude = lng
+            new_listing.geohash = geohash2.encode(lat, lng, precision=6)
+        except GeocodingError as e:
+            raise HTTPException(status_code=422, detail=str(e))
+
     db.add(new_listing)
     await db.commit()
     await db.refresh(new_listing)
@@ -98,10 +104,16 @@ async def update_listing(
     update_data = payload.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(listing, field, value)
-    
-    # Recalculate geohash if location was updated
-    if listing.latitude is not None and listing.longitude is not None:
-        listing.geohash = geohash2.encode(listing.latitude, listing.longitude, precision=6)
+
+    # Re-geocode if address was updated
+    if payload.address:
+        try:
+            lat, lng = await geocode_address(payload.address)
+            listing.latitude = lat
+            listing.longitude = lng
+            listing.geohash = geohash2.encode(lat, lng, precision=6)
+        except GeocodingError as e:
+            raise HTTPException(status_code=422, detail=str(e))
     
     listing.version += 1
     await db.commit()

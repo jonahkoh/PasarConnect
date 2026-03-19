@@ -23,6 +23,7 @@ class FoodListing(Base):
     description : Mapped[str | None]               = mapped_column(String(1024), nullable=True)
     quantity    : Mapped[int]                      = mapped_column(Integer, nullable=False)
     expiry_date : Mapped[datetime.datetime]        = mapped_column(DateTime(timezone=True), nullable=False)
+    address     : Mapped[str | None]               = mapped_column(String(512), nullable=True)
     latitude    : Mapped[float | None]             = mapped_column(Float, nullable=True, index=True)
     longitude   : Mapped[float | None]             = mapped_column(Float, nullable=True, index=True)
     geohash     : Mapped[str | None]               = mapped_column(String(12), nullable=True, index=True)

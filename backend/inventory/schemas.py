@@ -11,8 +11,7 @@ class FoodListingCreate(BaseModel):
     description: Optional[str] = Field(None, max_length=1024)
     quantity: int = Field(..., gt=0)
     expiry_date: datetime
-    latitude: Optional[float] = Field(None, ge=-90, le=90)
-    longitude: Optional[float] = Field(None, ge=-180, le=180)
+    address: Optional[str] = Field(None, max_length=512)
 
     @field_validator("expiry_date")
     @classmethod
@@ -30,8 +29,7 @@ class FoodListingUpdate(BaseModel):
     quantity: Optional[int] = Field(None, gt=0)
     expiry_date: Optional[datetime] = None
     status: Optional[ListingStatus] = None
-    latitude: Optional[float] = Field(None, ge=-90, le=90)
-    longitude: Optional[float] = Field(None, ge=-180, le=180)
+    address: Optional[str] = Field(None, max_length=512)
 
     @field_validator("expiry_date")
     @classmethod
@@ -52,6 +50,7 @@ class FoodListingResponse(BaseModel):
     description: Optional[str]
     quantity: int
     expiry_date: datetime
+    address: Optional[str]
     latitude: Optional[float]
     longitude: Optional[float]
     geohash: Optional[str]

@@ -8,7 +8,7 @@ import sys, os
 import pytest
 import pytest_asyncio
 from datetime import datetime, timezone
-from unittest.mock import patch
+from unittest.mock import patch, AsyncMock
 from httpx import AsyncClient, ASGITransport
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -228,8 +228,6 @@ def _listing_payload(**overrides):
         "title": "Fresh Bread",
         "quantity": 5,
         "expiry_date": FUTURE_DATE,
-        "latitude": SG_LAT,
-        "longitude": SG_LNG,
     }
     base.update(overrides)
     return base
@@ -257,10 +255,12 @@ async def test_update_listing_status(http_db):
 
 
 async def test_update_listing_location_recalculates_geohash(http_db):
-    created = (await http_db.post("/listings", json=_listing_payload())).json()
+    with patch("inventory.geocode_address", new=AsyncMock(return_value=(SG_LAT, SG_LNG))):
+        created = (await http_db.post("/listings", json=_listing_payload(address="Jurong West Street 61"))).json()
     old_geohash = created["geohash"]
     # Move to Tokyo — completely different geohash
-    r = await http_db.put(f"/listings/{created['id']}", json={"latitude": 35.6762, "longitude": 139.6503})
+    with patch("inventory.geocode_address", new=AsyncMock(return_value=(35.6762, 139.6503))):
+        r = await http_db.put(f"/listings/{created['id']}", json={"address": "Tokyo, Japan"})
     assert r.status_code == 200
     assert r.json()["geohash"] != old_geohash
     assert len(r.json()["geohash"]) == 6  # precision must stay at 6
@@ -313,20 +313,22 @@ async def test_delete_listing_removed_from_all_listings(http_db):
 # ── Geohash / nearby search tests ─────────────────────────────────────────────
 
 async def test_create_listing_sets_geohash(http_db):
-    r = await http_db.post("/listings", json=_listing_payload())
+    with patch("inventory.geocode_address", new=AsyncMock(return_value=(SG_LAT, SG_LNG))):
+        r = await http_db.post("/listings", json=_listing_payload(address="Jurong West Street 61"))
     data = r.json()
     assert data["geohash"] is not None
     assert len(data["geohash"]) == 6  # precision 6
 
 
 async def test_create_listing_without_location_no_geohash(http_db):
-    r = await http_db.post("/listings", json=_listing_payload(latitude=None, longitude=None))
+    r = await http_db.post("/listings", json=_listing_payload(address=None))
     assert r.status_code == 201
     assert r.json()["geohash"] is None
 
 
 async def test_nearby_search_finds_close_listing(http_db):
-    await http_db.post("/listings", json=_listing_payload(latitude=SG_LAT, longitude=SG_LNG))
+    with patch("inventory.geocode_address", new=AsyncMock(return_value=(SG_LAT, SG_LNG))):
+        await http_db.post("/listings", json=_listing_payload(address="Jurong West Street 61"))
     # Search from the exact same point — must be in the 9-cell neighbourhood
     r = await http_db.get("/listings/search/nearby", params={
         "latitude": SG_LAT,
@@ -350,8 +352,9 @@ async def test_nearby_search_excludes_far_listing(http_db):
 
 
 async def test_nearby_search_only_returns_available(http_db):
-    r1 = (await http_db.post("/listings", json=_listing_payload())).json()
-    r2 = (await http_db.post("/listings", json=_listing_payload(title="Sold item"))).json()
+    with patch("inventory.geocode_address", new=AsyncMock(return_value=(SG_LAT, SG_LNG))):
+        r1 = (await http_db.post("/listings", json=_listing_payload(address="Jurong West Street 61"))).json()
+        r2 = (await http_db.post("/listings", json=_listing_payload(title="Sold item", address="Jurong West Street 61"))).json()
     await http_db.put(f"/listings/{r2['id']}", json={"status": "SOLD"})
 
     r = await http_db.get("/listings/search/nearby", params={
@@ -385,8 +388,8 @@ async def test_nearby_search_empty_db(http_db):
 
 
 async def test_geohash_precision_consistent_after_update(http_db):
-    created = (await http_db.post("/listings", json=_listing_payload())).json()
-    r = await http_db.put(f"/listings/{created['id']}", json={
-        "latitude": 1.2900, "longitude": 103.8500,
-    })
+    with patch("inventory.geocode_address", new=AsyncMock(return_value=(SG_LAT, SG_LNG))):
+        created = (await http_db.post("/listings", json=_listing_payload(address="Jurong West Street 61"))).json()
+    with patch("inventory.geocode_address", new=AsyncMock(return_value=(1.2900, 103.8500))):
+        r = await http_db.put(f"/listings/{created['id']}", json={"address": "Queenstown, Singapore"})
     assert len(r.json()["geohash"]) == 6
