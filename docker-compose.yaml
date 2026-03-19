@@ -90,6 +90,11 @@ services:
       CLAIM_LOG_GRPC_HOST:  claim-log-service
       CLAIM_LOG_GRPC_PORT:  50061
       RABBITMQ_HOST:        rabbitmq
+      VERIFICATION_GRPC_HOST:   verification-service   
+      VERIFICATION_GRPC_PORT:   50052                  
+      PUBLIC_KEY_PATH:          /app/keys/public.pem   
+    volumes:                                           
+      - ./keys:/app/keys:ro                            
     depends_on:
       rabbitmq:
         condition: service_started
@@ -97,6 +102,26 @@ services:
         condition: service_started
       claim-log-service:
         condition: service_started
+      verification-service:
+        condition: service_started 
+  
+  verification-service:
+    build:
+      context: ./backend
+      dockerfile: outsystems/Dockerfile
+    ports:
+      - "8007:8007"   # HTTP (health endpoint)
+      - "50052:50052" # gRPC
+    environment:
+      VERIFICATION_GRPC_PORT:  50052
+      OUTSYSTEMS_API_URL:      ${OUTSYSTEMS_API_URL}
+      OUTSYSTEMS_API_KEY:      ${OUTSYSTEMS_API_KEY}
+      OUTSYSTEMS_TIMEOUT_SECONDS: 5.0
+      PUBLIC_KEY_PATH:         /app/keys/public.pem
+      MOCK_OUTSYSTEMS:            ${MOCK_OUTSYSTEMS:-false}
+      MOCK_OUTSYSTEMS_APPROVED:   ${MOCK_OUTSYSTEMS_APPROVED:-true}
+    volumes:
+      - ./keys:/app/keys:ro
 
   claim-log-service:
     build:
