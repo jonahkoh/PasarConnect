@@ -2,7 +2,7 @@
 import os
 import grpc
 
-from verification_pb2 import VerifyRequest          # generated from proto
+from verification_pb2 import VerifyCharityRequest   # generated from proto
 from verification_pb2_grpc import VerificationStub  # generated from proto
 
 VERIFICATION_GRPC_HOST = os.getenv("VERIFICATION_GRPC_HOST", "verification")
@@ -20,5 +20,5 @@ async def verify_charity_eligibility(charity_id: int, listing_id: int) -> tuple[
     """
     async with grpc.aio.insecure_channel(VERIFICATION_GRPC_ADDR) as channel:
         stub = VerificationStub(channel)
-        resp = await stub.VerifyCharity(VerifyRequest(charity_id=charity_id, listing_id=listing_id))
+        resp = await stub.VerifyCharity(VerifyCharityRequest(charity_id=charity_id, listing_id=listing_id))
         return resp.valid, resp.reason

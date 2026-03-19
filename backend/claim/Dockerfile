@@ -14,12 +14,13 @@ COPY claim/ ./claim/
 
 WORKDIR /app/claim
 
-# Generate gRPC stubs from the service's own proto copy
+# Generate gRPC stubs from the service's own proto copies
 RUN python -m grpc_tools.protoc \
     -I./proto \
     --python_out=. \
     --grpc_python_out=. \
-    ./proto/inventory.proto
+    ./proto/inventory.proto \
+    ./proto/verification.proto
 
 EXPOSE 8002
 

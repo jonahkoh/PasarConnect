@@ -30,3 +30,31 @@ class ClaimResponse(BaseModel):
     listing_version: int
     created_at: datetime.datetime
     updated_at: datetime.datetime | None
+
+
+# ── Waitlist schemas ───────────────────────────────────────────────────────────
+
+class WaitlistJoin(BaseModel):
+    """Body sent when a charity wants to join the waitlist."""
+    charity_id: int = Field(..., gt=0)
+
+
+class WaitlistPosition(BaseModel):
+    """Returned after successfully joining the waitlist."""
+    listing_id: int
+    charity_id: int
+    position: int  # 1 = next in line
+
+
+class WaitlistListEntry(BaseModel):
+    """One entry in the GET /waitlist response."""
+    listing_id: int
+    charity_id: int
+    position: int
+
+
+# ── Cancel claim schema ────────────────────────────────────────────────────────
+
+class CancelClaimRequest(BaseModel):
+    """Body sent when cancelling an active claim."""
+    charity_id: int = Field(..., gt=0)  # must match the claim owner
