@@ -12,12 +12,11 @@ COPY claim_log/ ./claim_log/
 
 WORKDIR /app/claim_log
 
-# Generate gRPC stubs used to synchronize inventory state on status updates
+# Generate claim-log gRPC stubs consumed by claim orchestrator
 RUN python -m grpc_tools.protoc \
 	-I./proto \
 	--python_out=. \
 	--grpc_python_out=. \
-	./proto/inventory.proto \
 	./proto/claim_log.proto
 
 EXPOSE 8006

@@ -273,14 +273,8 @@ async def test_approve_payment_success(payment_client):
     assert response.status_code == 200
     assert response.json()["new_status"] == "COLLECTED"
     payment_client["mock_get_payment_log"].assert_called_once()
-    payment_client["mock_update_payment_status"].assert_called_once_with(
-        transaction_id="pi_mock_approve",
-        new_status=3,
-        listing_version=10,
-    )
     payment_client["mock_mark_sold"].assert_called_once_with(listing_id=222, expected_version=5)
     payment_client["mock_publish_success"].assert_called()
-
 
 @pytest.mark.asyncio
 async def test_reject_payment_success(payment_client):

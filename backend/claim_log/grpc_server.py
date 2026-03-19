@@ -40,6 +40,35 @@ _ALLOWED_TRANSITIONS = {
 
 
 class ClaimLogServicer(claim_log_pb2_grpc.ClaimLogServiceServicer):
+    async def CreateClaimLog(self, request, context):
+        status = _STATUS_MAP.get(request.status)
+        if status is None:
+            await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Invalid claim status")
+            return claim_log_pb2.CreateClaimLogResponse()
+
+        if request.listing_id <= 0 or request.charity_id <= 0 or request.listing_version < 0:
+            await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Invalid claim create payload")
+            return claim_log_pb2.CreateClaimLogResponse()
+
+        async with SessionLocal() as db:
+            record = ClaimRecord(
+                listing_id=request.listing_id,
+                charity_id=request.charity_id,
+                listing_version=request.listing_version,
+                status=status,
+            )
+            db.add(record)
+            await db.commit()
+            await db.refresh(record)
+
+            return claim_log_pb2.CreateClaimLogResponse(
+                id=record.id,
+                listing_id=record.listing_id,
+                charity_id=record.charity_id,
+                listing_version=record.listing_version,
+                status=_REVERSE_STATUS_MAP[record.status],
+            )
+
     async def UpdateClaimStatus(self, request, context):
         new_status = _STATUS_MAP.get(request.new_status)
         if new_status is None:
