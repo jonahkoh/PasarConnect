@@ -124,7 +124,7 @@ services:
       - "8003:8003"
     environment:
       # Payment Orchestrator is stateless — no DB of its own.
-      # All state lives in payment-log-service.
+      # All state lives in payment-log-service hi.
       INVENTORY_GRPC_HOST:  inventory-service
       INVENTORY_GRPC_PORT:  50051
       RABBITMQ_HOST:        rabbitmq
