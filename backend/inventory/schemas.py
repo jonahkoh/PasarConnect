@@ -60,3 +60,18 @@ class FoodListingResponse(BaseModel):
     updated_at: Optional[datetime]
 
     model_config = {"from_attributes": True}
+
+
+class FoodLocationResponse(BaseModel):
+    id: int
+    vendor_id: str
+    title: str
+    address: Optional[str]
+    latitude: float
+    longitude: float
+    geohash: str
+    quantity: int
+    expiry_date: datetime
+    status: ListingStatus
+
+    model_config = {"from_attributes": True}

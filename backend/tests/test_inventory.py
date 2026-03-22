@@ -393,3 +393,44 @@ async def test_geohash_precision_consistent_after_update(http_db):
     with patch("inventory.geocode_address", new=AsyncMock(return_value=(1.2900, 103.8500))):
         r = await http_db.put(f"/listings/{created['id']}", json={"address": "Queenstown, Singapore"})
     assert len(r.json()["geohash"]) == 6
+
+
+async def test_live_map_returns_only_available_listings_with_coordinates(http_db):
+    with patch("inventory.geocode_address", new=AsyncMock(return_value=(SG_LAT, SG_LNG))):
+        available = (await http_db.post("/listings", json=_listing_payload(address="Jurong West Street 61"))).json()
+        sold = (await http_db.post("/listings", json=_listing_payload(title="Sold item", address="Jurong West Street 61"))).json()
+
+    await http_db.put(f"/listings/{sold['id']}", json={"status": "SOLD"})
+    await http_db.post("/listings", json=_listing_payload(title="No map pin"))
+
+    r = await http_db.get("/listings/map/live")
+
+    assert r.status_code == 200
+    data = r.json()
+    assert [item["id"] for item in data] == [available["id"]]
+    assert data[0]["latitude"] == SG_LAT
+    assert data[0]["longitude"] == SG_LNG
+    assert data[0]["geohash"] == available["geohash"]
+
+
+async def test_live_map_supports_nearby_filtering(http_db):
+    with patch("inventory.geocode_address", new=AsyncMock(return_value=(SG_LAT, SG_LNG))):
+        near = (await http_db.post("/listings", json=_listing_payload(address="Jurong West Street 61"))).json()
+    with patch("inventory.geocode_address", new=AsyncMock(return_value=(35.6762, 139.6503))):
+        far = (await http_db.post("/listings", json=_listing_payload(title="Tokyo item", address="Tokyo, Japan"))).json()
+
+    r = await http_db.get("/listings/map/live", params={
+        "latitude": SG_LAT,
+        "longitude": SG_LNG,
+        "radius_km": 5,
+    })
+
+    assert r.status_code == 200
+    ids = [item["id"] for item in r.json()]
+    assert near["id"] in ids
+    assert far["id"] not in ids
+
+
+async def test_live_map_rejects_partial_coordinates(http_db):
+    r = await http_db.get("/listings/map/live", params={"latitude": SG_LAT})
+    assert r.status_code == 422

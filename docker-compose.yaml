@@ -68,6 +68,7 @@ services:
       - "8001:8001"   # HTTP
       - "50051:50051" # gRPC
     environment:
+      USE_SQLITE: "false"
       DB_HOST:     inventory-db
       DB_PORT:     5432
       DB_USER:     postgres
