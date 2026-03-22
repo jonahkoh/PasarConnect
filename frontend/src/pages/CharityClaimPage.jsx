@@ -1,8 +1,10 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import TopNav from "../components/TopNav";
 import FoodCard from "../components/FoodCard";
 import CharityFilterSidebar from "../components/CharityFilterSidebar";
 import ClaimSummaryCard from "../components/ClaimSummaryCard";
+import LiveFoodMap from "../components/LiveFoodMap";
 
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -75,7 +77,7 @@ async function submitClaimAttempt(item) {
 
   return {
     itemId: item.id,
-    status: "PENDING_COLLECTION",
+    status: "PENDING COLLECTION",
   };
 }
 
@@ -83,7 +85,14 @@ function isCharityEligible(item) {
   return item.status === "AVAILABLE" && Boolean(item.charityWindow);
 }
 
-export default function CharityClaimPage({ listings, onApplyClaimSuccesses }) {
+export default function CharityClaimPage({
+  listings,
+  selectedClaimIds,
+  onToggleClaimQueue,
+  onRemoveFromClaimQueue,
+  onApplyClaimSuccesses,
+}) {
+  const navigate = useNavigate();
   const [search, setSearch] = useState("");
   const [activeView, setActiveView] = useState("queue");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -91,9 +100,11 @@ export default function CharityClaimPage({ listings, onApplyClaimSuccesses }) {
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [selectedCategories, setSelectedCategories] = useState([]);
   const [selectedPickupWindows, setSelectedPickupWindows] = useState([]);
-  const [selectedItems, setSelectedItems] = useState([]);
   const [claimHistory, setClaimHistory] = useState([]);
   const [submissionSummary, setSubmissionSummary] = useState(null);
+  const [selectedMapListingId, setSelectedMapListingId] = useState(
+    listings.find(isCharityEligible)?.id ?? null
+  );
 
   function toggleValue(setter, currentValues, value) {
     setter(
@@ -139,29 +150,45 @@ export default function CharityClaimPage({ listings, onApplyClaimSuccesses }) {
     return result;
   }, [listings, search, selectedCategories, selectedPickupWindows, sortBy]);
 
-  const queuedIds = useMemo(
-    () => new Set(selectedItems.map((item) => item.id)),
-    [selectedItems]
+  const filteredMapListings = useMemo(
+    () => filteredListings.filter((item) => typeof item.latitude === "number" && typeof item.longitude === "number"),
+    [filteredListings]
   );
 
-  function addToQueue(item) {
-    setSubmissionSummary(null);
-    setSelectedItems((prev) =>
-      prev.some((entry) => entry.id === item.id) ? prev : [...prev, item]
-    );
-  }
-
-  function removeFromQueue(itemId) {
-    setSelectedItems((prev) => prev.filter((item) => item.id !== itemId));
-  }
-
-  async function handleToggleSelection(item) {
-    if (queuedIds.has(item.id)) {
-      removeFromQueue(item.id);
+  useEffect(() => {
+    if (filteredMapListings.some((item) => item.id === selectedMapListingId)) {
       return;
     }
 
-    addToQueue(item);
+    setSelectedMapListingId(filteredMapListings[0]?.id ?? null);
+  }, [filteredMapListings, selectedMapListingId]);
+
+  function handlePreviewLocation(item) {
+    setSelectedMapListingId(item.id);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  const queuedIds = useMemo(
+    () => new Set(selectedClaimIds),
+    [selectedClaimIds]
+  );
+  const selectedItems = useMemo(
+    () => listings.filter((item) => selectedClaimIds.includes(item.id)),
+    [listings, selectedClaimIds]
+  );
+
+  async function handleToggleSelection(item) {
+    setSubmissionSummary(null);
+    if (queuedIds.has(item.id)) {
+      onRemoveFromClaimQueue(item.id);
+      return;
+    }
+
+    onToggleClaimQueue(item.id);
+  }
+
+  function handleOpenDetail(item) {
+    navigate(`/charity/${item.id}`);
   }
 
   async function handleSubmitClaims() {
@@ -220,9 +247,6 @@ export default function CharityClaimPage({ listings, onApplyClaimSuccesses }) {
     });
 
     onApplyClaimSuccesses(successIds);
-    setSelectedItems((prev) =>
-      prev.filter((item) => !successIds.includes(item.id))
-    );
     setClaimHistory((prev) => [...historyEntries, ...prev]);
     setSubmissionSummary(nextSummary);
     setIsSubmitting(false);
@@ -241,6 +265,12 @@ export default function CharityClaimPage({ listings, onApplyClaimSuccesses }) {
             individually in real time.
           </p>
         </div>
+
+        <LiveFoodMap
+          listings={filteredMapListings}
+          selectedListingId={selectedMapListingId}
+          onSelectListing={setSelectedMapListingId}
+        />
 
         <section className="marketplace-dashboard">
           <CharityFilterSidebar
@@ -301,6 +331,8 @@ export default function CharityClaimPage({ listings, onApplyClaimSuccesses }) {
                       key={item.id}
                       item={item}
                       onAction={handleToggleSelection}
+                      onPreview={handlePreviewLocation}
+                      onOpenDetail={handleOpenDetail}
                       isProcessing={false}
                       isDisabled={isSubmitting}
                       actionLabel={isQueued ? "Remove" : "Select"}
@@ -320,7 +352,7 @@ export default function CharityClaimPage({ listings, onApplyClaimSuccesses }) {
             submissionSummary={submissionSummary}
             isSubmitting={isSubmitting}
             onChangeView={setActiveView}
-            onRemoveItem={removeFromQueue}
+            onRemoveItem={onRemoveFromClaimQueue}
             onSubmitClaims={handleSubmitClaims}
           />
         </section>

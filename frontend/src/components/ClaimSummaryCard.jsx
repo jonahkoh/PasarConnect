@@ -114,9 +114,8 @@ export default function ClaimSummaryCard({
         <>
           {claimHistory.length === 0 ? (
             <div className="cart-summary__empty">
-              Successful claims will appear here with `PENDING_COLLECTION` status.
-              Real-time status updates can be wired in once a history or live-status
-              API is available.
+              Successful claims will appear here with pending collection status.
+        
             </div>
           ) : (
             <div className="cart-summary__list">
