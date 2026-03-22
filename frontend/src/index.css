@@ -467,6 +467,18 @@ a {
   box-shadow: 0 8px 18px rgba(27, 44, 35, 0.04);
 }
 
+.food-card--interactive {
+  cursor: pointer;
+  transition: transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease;
+}
+
+.food-card--interactive:hover,
+.food-card--interactive:focus-visible {
+  transform: translateY(-2px);
+  border-color: #b6d7ca;
+  box-shadow: 0 16px 28px rgba(21, 48, 36, 0.12);
+}
+
 .food-card__media {
   position: relative;
   height: 220px;
@@ -516,6 +528,9 @@ a {
 
 .food-card__content {
   padding: 18px 18px 16px;
+  display: flex;
+  flex-direction: column;
+  min-height: 240px;
 }
 
 .food-card__content h3 {
@@ -530,6 +545,7 @@ a {
   color: #6f8179;
   font-size: 0.98rem;
   font-family: Inter, system-ui, sans-serif;
+  min-height: 56px;
 }
 
 .food-card__meta {
@@ -545,10 +561,11 @@ a {
 }
 
 .food-card__footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
   gap: 14px;
+  margin-top: auto;
 }
 
 .food-card__price {
@@ -560,12 +577,12 @@ a {
   border: none;
   background: #2f9ee5;
   color: white;
-  padding: 12px 20px;
+  padding: 12px 16px;
   border-radius: 14px;
   font-weight: 700;
   cursor: pointer;
   font-family: Inter, system-ui, sans-serif;
-  min-width: 88px;
+  min-width: 82px;
 }
 
 .claim-btn:hover:enabled {
@@ -696,13 +713,53 @@ a {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  min-height: 88px;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.food-card__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: auto;
+  min-height: 22px;
+  align-items: flex-end;
+}
+
+.food-card__ghost-link {
+  display: inline-flex;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: #1f7b57;
+  font-family: Inter, system-ui, sans-serif;
+  font-size: 0.86rem;
+  font-weight: 700;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  white-space: nowrap;
 }
 
 .food-card__helper {
   font-family: Inter, system-ui, sans-serif;
   color: #6a7d74;
   font-size: 0.84rem;
+  min-height: 38px;
+  line-height: 1.35;
 }
+
+.food-card__price,
+.food-card__helper,
+.food-card__links {
+  max-width: 100%;
+}
+
+.claim-btn {
+  align-self: end;
+}
+
 
 .food-card--selected {
   border-color: #2f9ee5;
@@ -774,6 +831,11 @@ a {
   border-radius: 16px;
 }
 
+.cart-line__copy {
+  min-width: 0;
+  flex: 1;
+}
+
 .cart-line h3 {
   margin: 0 0 4px;
   font-size: 0.98rem;
@@ -795,6 +857,16 @@ a {
   color: #315245;
   font-family: Inter, system-ui, sans-serif;
   font-size: 0.9rem;
+}
+
+.cart-line__stepper {
+  gap: 8px;
+  padding: 6px 8px;
+}
+
+.cart-line__stepper button {
+  width: 26px;
+  height: 26px;
 }
 
 .cart-summary__totals {
@@ -1037,6 +1109,11 @@ a {
   cursor: pointer;
 }
 
+.quantity-stepper button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .cart-checkout {
   position: sticky;
   top: 92px;
@@ -1152,6 +1229,33 @@ a {
   font-family: Inter, system-ui, sans-serif;
 }
 
+.claim-page__map-section {
+  margin-top: 22px;
+  padding: 20px;
+  border: 1px solid #ddd5c9;
+  border-radius: 22px;
+  background: linear-gradient(180deg, #fbfaf6 0%, #f3ede3 100%);
+}
+
+.claim-page__map-copy h2 {
+  margin: 6px 0 8px;
+  color: #183328;
+}
+
+.claim-page__map-copy p:last-child {
+  margin: 0 0 16px;
+  color: #677972;
+  font-family: Inter, system-ui, sans-serif;
+}
+
+.claim-page__map {
+  height: 320px;
+  width: 100%;
+  border-radius: 18px;
+  overflow: hidden;
+  border: 1px solid #d5cdbf;
+}
+
 .claim-page__panel {
   position: sticky;
   top: 92px;
@@ -1174,6 +1278,65 @@ a {
   line-height: 1.6;
 }
 
+.claim-page__panel-summary {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 16px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid #ddd5c9;
+  color: #486159;
+  font-family: Inter, system-ui, sans-serif;
+}
+
+.claim-page__panel-summary strong {
+  color: #173126;
+}
+
+.claim-page__queue-button {
+  width: 100%;
+  margin-bottom: 12px;
+  border: 1px solid #c9d8d0;
+  border-radius: 14px;
+  background: #edf7f1;
+  color: #18553b;
+  font-family: Inter, system-ui, sans-serif;
+  font-size: 0.95rem;
+  font-weight: 700;
+  padding: 14px 16px;
+  cursor: pointer;
+}
+
+.claim-page__queue-button--danger {
+  border-color: #e4b8b3;
+  background: #fff1f0;
+  color: #a63a32;
+}
+
+.claim-page__queue-button:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.claim-page__queue-note {
+  margin: 0 0 12px;
+  color: #5d726a;
+  font-family: Inter, system-ui, sans-serif;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.claim-page__market-actions {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.claim-page__stepper {
+  justify-content: center;
+}
+
 .claim-page__list {
   margin: 0 0 18px;
   padding-left: 18px;
@@ -1184,15 +1347,204 @@ a {
 
 .claim-page__secondary {
   width: 100%;
-  margin-top: 12px;
   border: 1px solid #d0d6d2;
-  border-radius: 14px;
+  border-radius: 10px;
   background: white;
   color: #385448;
   font-family: Inter, system-ui, sans-serif;
   font-weight: 700;
   padding: 14px 16px;
   cursor: pointer;
+}
+
+.claim-page__map-link {
+  display: inline-flex;
+  color: #1b7f5c;
+  font-family: Inter, system-ui, sans-serif;
+  font-weight: 700;
+}
+
+.claim-page__panel-footer {
+  margin-top: 16px;
+  display: grid;
+  gap: 12px;
+}
+
+.claim-page--marketplace .claim-page__image {
+  border-radius: 0;
+  margin-bottom: 0;
+  height: 100%;
+}
+
+.claim-page--marketplace .claim-page__status {
+  border-radius: 10px;
+}
+
+.claim-page--marketplace {
+  display: block;
+}
+
+.claim-page__main--marketplace {
+  display: grid;
+  gap: 28px;
+}
+
+.claim-page__product {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(320px, 420px);
+  gap: 40px;
+  align-items: start;
+}
+
+.claim-page__gallery {
+  min-width: 0;
+}
+
+.claim-page__gallery-frame {
+  overflow: hidden;
+  border-radius: 14px;
+  border: 1px solid #e4dbcf;
+  background: #f8f3ea;
+  aspect-ratio: 1 / 1;
+}
+
+.claim-page__product-info {
+  display: grid;
+  gap: 18px;
+}
+
+.claim-page--marketplace .claim-page__hero {
+  margin-bottom: 0;
+}
+
+.claim-page__market-price {
+  margin: 0;
+  color: #173126;
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.claim-page__product-copy {
+  margin: 0;
+  color: #667871;
+  font-family: Inter, system-ui, sans-serif;
+  line-height: 1.7;
+}
+
+.claim-page__info-strip {
+  display: grid;
+  gap: 0;
+  border-top: 1px solid #e4dbcf;
+  border-bottom: 1px solid #e4dbcf;
+}
+
+.claim-page__info-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 0;
+  border-bottom: 1px solid #eee4d6;
+  font-family: Inter, system-ui, sans-serif;
+}
+
+.claim-page__info-row:last-child {
+  border-bottom: none;
+}
+
+.claim-page__info-row span {
+  color: #7c8d86;
+}
+
+.claim-page__info-row strong {
+  color: #173126;
+  text-align: right;
+}
+
+.claim-page--marketplace .claim-page__map-section {
+  margin-top: 4px;
+  padding: 18px;
+  border-radius: 14px;
+  background: #fcfaf5;
+}
+
+.claim-page--marketplace .claim-page__map {
+  border-radius: 12px;
+}
+
+.claim-page--marketplace .claim-page__panel {
+  position: static;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+.claim-page--marketplace .claim-page__queue-button {
+  margin-bottom: 0;
+  border-radius: 8px;
+  background: #eaf5ef;
+}
+
+.claim-page--marketplace .claim-page__queue-button--danger {
+  background: #fff1f0;
+  border-color: #e4b8b3;
+  color: #a63a32;
+}
+
+.claim-page--marketplace .claim-page__stepper {
+  border-radius: 8px;
+  justify-content: center;
+}
+
+.claim-page--marketplace .claim-page__panel-footer {
+  margin-top: 18px;
+}
+
+.claim-page--charity {
+  display: block;
+}
+
+.claim-page--charity .claim-page__image {
+  border-radius: 0;
+  margin-bottom: 0;
+  height: 100%;
+}
+
+.claim-page--charity .claim-page__status {
+  border-radius: 10px;
+}
+
+.claim-page--charity .claim-page__panel {
+  position: static;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+.claim-page--charity .claim-page__queue-button {
+  margin-bottom: 0;
+  border-radius: 8px;
+  background: #eaf5ef;
+}
+
+.claim-page--charity .claim-page__queue-button--danger {
+  background: #fff1f0;
+  border-color: #e4b8b3;
+  color: #a63a32;
+}
+
+.claim-page--charity .claim-page__map-section {
+  margin-top: 4px;
+  padding: 18px;
+  border-radius: 14px;
+  background: #fcfaf5;
+}
+
+.claim-page--charity .claim-page__map {
+  border-radius: 12px;
 }
 
 @media (max-width: 1100px) {
@@ -1208,6 +1560,11 @@ a {
   .cart-page,
   .claim-page {
     grid-template-columns: 1fr;
+  }
+
+  .claim-page__product {
+    grid-template-columns: 1fr;
+    gap: 24px;
   }
 
   .cart-checkout,
@@ -1340,5 +1697,317 @@ a {
 
   .cart-summary__pill {
     font-size: 0.78rem;
+  }
+}
+
+.live-food-map {
+  margin-bottom: 28px;
+  padding: 24px;
+  border: 1px solid #d4cec2;
+  border-radius: 28px;
+  background:
+    radial-gradient(circle at top left, rgba(123, 201, 167, 0.2), transparent 34%),
+    linear-gradient(135deg, #fdfbf7 0%, #f4efe7 100%);
+  box-shadow: 0 24px 50px rgba(73, 56, 36, 0.08);
+}
+
+.live-food-map__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 18px;
+}
+
+.live-food-map__eyebrow {
+  margin: 0 0 8px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #496c5c;
+  font-family: Inter, system-ui, sans-serif;
+}
+
+.live-food-map__header h2 {
+  margin: 0 0 8px;
+  font-size: 1.7rem;
+  color: #173729;
+}
+
+.live-food-map__subcopy {
+  margin: 0;
+  max-width: 700px;
+  color: #60736b;
+  font-family: Inter, system-ui, sans-serif;
+}
+
+.live-food-map__status-stack {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.live-food-map__status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid #d5d0c5;
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: #234032;
+  background: rgba(255, 255, 255, 0.78);
+  font-family: Inter, system-ui, sans-serif;
+}
+
+.live-food-map__status--loading {
+  color: #895a12;
+  border-color: #ead09e;
+  background: #fff6df;
+}
+
+.live-food-map__status--success {
+  color: #1d5f41;
+  border-color: #bfe1ce;
+  background: #edf9f2;
+}
+
+.live-food-map__status--error {
+  color: #8b3d32;
+  border-color: #e3b0a7;
+  background: #fff0ee;
+}
+
+.live-food-map__status--neutral {
+  color: #375449;
+}
+
+.live-food-map__layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.8fr) minmax(280px, 0.9fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.live-food-map__canvas,
+.live-food-map__sidebar {
+  min-width: 0;
+}
+
+.live-food-map__leaflet {
+  height: 500px;
+  width: 100%;
+  border-radius: 22px;
+  overflow: hidden;
+  border: 1px solid #d6d0c4;
+}
+
+.live-food-map__sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: 500px;
+}
+
+.live-food-map__list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: 1;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.live-food-map__list-item,
+.live-food-map__empty {
+  padding: 16px;
+  border-radius: 18px;
+  border: 1px solid #ddd6c8;
+  background: rgba(255, 252, 247, 0.92);
+}
+
+.live-food-map__list-item {
+  text-align: left;
+  cursor: pointer;
+  width: 100%;
+}
+
+.live-food-map__list-item--selected {
+  border-color: #1f9d75;
+  box-shadow: 0 0 0 3px rgba(31, 157, 117, 0.12);
+}
+
+.live-food-map__list-item h3 {
+  margin: 0 0 6px;
+  font-size: 1rem;
+  color: #173729;
+}
+
+.live-food-map__list-item p,
+.live-food-map__empty span {
+  margin: 0;
+  color: #6b7c74;
+  font-family: Inter, system-ui, sans-serif;
+  line-height: 1.45;
+}
+
+.live-food-map__focus-card {
+  padding: 18px;
+  border-radius: 20px;
+  border: 1px solid #d7d0c4;
+  background: rgba(255, 252, 247, 0.96);
+}
+
+.live-food-map__focus-label {
+  margin: 0;
+  color: #70847b;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.72rem;
+  font-family: Inter, system-ui, sans-serif;
+}
+
+.live-food-map__focus-card h3 {
+  margin: 8px 0 6px;
+  color: #173729;
+}
+
+.live-food-map__focus-card > p:last-of-type {
+  margin: 0;
+  color: #697b73;
+  font-family: Inter, system-ui, sans-serif;
+  line-height: 1.5;
+}
+
+.live-food-map__focus-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 14px;
+  color: #375449;
+  font-size: 0.92rem;
+  font-family: Inter, system-ui, sans-serif;
+}
+
+.live-food-map__focus-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.live-food-map__link-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  padding: 0 16px;
+  border-radius: 999px;
+  background: #173e30;
+  color: white;
+  font-family: Inter, system-ui, sans-serif;
+  font-weight: 700;
+}
+
+.live-food-map__text-link {
+  display: inline-flex;
+  align-items: center;
+  color: #1b7f5c;
+  font-family: Inter, system-ui, sans-serif;
+  font-weight: 700;
+}
+
+.live-food-map__list-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+  font-size: 0.9rem;
+  color: #365548;
+  font-family: Inter, system-ui, sans-serif;
+}
+
+.live-food-map__list-meta a,
+.live-food-map__popup a {
+  color: #1b7f5c;
+  font-weight: 700;
+}
+
+.live-food-map__empty {
+  display: grid;
+  gap: 8px;
+  min-height: 140px;
+  place-content: center;
+}
+
+.live-food-map__empty strong {
+  color: #173729;
+}
+
+.live-food-map__popup {
+  display: grid;
+  gap: 6px;
+  min-width: 180px;
+  font-family: Inter, system-ui, sans-serif;
+}
+
+.live-food-map__food-icon,
+.live-food-map__user-icon {
+  background: transparent;
+  border: none;
+}
+
+.live-food-map__food-dot,
+.live-food-map__user-dot {
+  display: block;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  border: 3px solid #fff;
+  box-shadow: 0 10px 20px rgba(30, 35, 34, 0.22);
+}
+
+.live-food-map__food-dot {
+  background: linear-gradient(135deg, #eb7c43, #c8502b);
+}
+
+.live-food-map__user-dot {
+  background: linear-gradient(135deg, #1f9d75, #165b49);
+}
+
+@media (max-width: 1100px) {
+  .live-food-map__layout {
+    grid-template-columns: 1fr;
+  }
+
+  .live-food-map__sidebar {
+    height: auto;
+  }
+
+  .live-food-map__list {
+    max-height: none;
+    flex: unset;
+  }
+}
+
+@media (max-width: 700px) {
+  .live-food-map {
+    padding: 18px;
+    border-radius: 22px;
+  }
+
+  .live-food-map__header {
+    flex-direction: column;
+  }
+
+  .live-food-map__status-stack {
+    justify-content: flex-start;
+  }
+
+  .live-food-map__leaflet {
+    height: 380px;
   }
 }
