@@ -1,43 +1,27 @@
-import { NavLink } from "react-router-dom";
-
-export default function TopNav({ cartCount = 0 }) {
+export default function TopNav() {
   return (
     <header className="topbar">
-      <div className="brand">FoodLoop</div>
+      <a href="/#home" className="brand">
+        PasarConnect
+      </a>
 
-      <nav className="topbar__nav">
-        <NavLink
-          to="/marketplace/cart"
-          className={({ isActive }) =>
-            isActive ? "topbar__cart topbar__cart--active" : "topbar__cart"
-          }
-        >
-          Cart
-          <span className="topbar__cart-count">{cartCount}</span>
-        </NavLink>
-
-        <NavLink
-          to="/charity"
-          className={({ isActive }) =>
-            isActive ? "topbar__link topbar__link--active" : "topbar__link"
-          }
-        >
-          Charity
-        </NavLink>
-
-        <NavLink
-          to="/marketplace"
-          className={({ isActive }) =>
-            isActive ? "topbar__link topbar__link--active" : "topbar__link"
-          }
-        >
-          Marketplace
-        </NavLink>
-
-        <button className="topbar__signout" type="button">
-          Sign Out
-        </button>
+      <nav className="topbar__nav" aria-label="Primary navigation">
+        <a href="/#home" className="topbar__link">
+          Home
+        </a>
+        <a href="/#how-it-works" className="topbar__link">
+          How It Works
+        </a>
+        <a href="/#impact" className="topbar__link">
+          Impact
+        </a>
       </nav>
+
+      <div className="topbar__actions">
+        <a href="/login" className="topbar__link">
+          Login
+        </a>
+      </div>
     </header>
   );
 }
