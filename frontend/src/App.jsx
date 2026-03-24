@@ -1,9 +1,11 @@
 import { useMemo, useState } from "react";
-import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { mockListings } from "./data/mockListings";
 import { mockPublicListings } from "./data/mockPublicListings";
+import VendorDashboardPage from "./features/vendor/pages/VendorDashboardPage";
 import CharityClaimPage from "./pages/CharityClaimPage";
 import CharityClaimDetailPage from "./pages/CharityClaimDetailPage";
+import LandingPage from "./pages/LandingPage";
 import MarketplaceCartPage from "./pages/MarketplaceCartPage";
 import PublicMarketplaceDetailPage from "./pages/PublicMarketplaceDetailPage";
 import PublicMarketplacePage from "./pages/PublicMarketplacePage";
@@ -157,7 +159,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/" element={<Navigate to="/charity" replace />} />
+        <Route path="/" element={<LandingPage />} />
         <Route
           path="/charity"
           element={
@@ -217,6 +219,7 @@ export default function App() {
             />
           }
         />
+        <Route path="/vendor" element={<VendorDashboardPage />} />
       </Routes>
     </BrowserRouter>
   );
