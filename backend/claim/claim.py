@@ -1,4 +1,4 @@
-"""
+﻿"""
 Claim Service — Orchestrator.
 
 This service is intentionally stateless: no local DB and no ORM models.
@@ -9,27 +9,22 @@ import logging
 import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from typing import Annotated
 
 import grpc
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 
+import claim_log_client
 import inventory_client
 import publisher
-from typing import Annotated
-from fastapi import Depends
-from verification_client import CharityNotEligibleError, verify_charity
-from shared.jwt_auth import verify_jwt_token
-import claim_log_client
 from schemas import ClaimCreate, ClaimResponse
+from shared.jwt_auth import verify_jwt_token
+from verification_client import CharityNotEligibleError, verify_charity
 
 load_dotenv()
 
 logger = logging.getLogger(__name__)
-
-VERIFICATION_GRPC_HOST = os.getenv("VERIFICATION_GRPC_HOST", "localhost")
-VERIFICATION_GRPC_PORT = os.getenv("VERIFICATION_GRPC_PORT", "50052")
-VERIFICATION_GRPC_ADDR = f"{VERIFICATION_GRPC_HOST}:{VERIFICATION_GRPC_PORT}"
 
 
 @asynccontextmanager
@@ -41,7 +36,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="PasarConnect — Claim Service", lifespan=lifespan)
 
 
-# ── Routes ────────────────────────────────────────────────────────────────────
+# -- Routes --------------------------------------------------------------------
 
 @app.get("/health")
 async def health():
@@ -50,7 +45,7 @@ async def health():
 
 async def _verify_claim_eligibility(charity_id: int, listing_id: int) -> None:
     """
-    Calls Verification Service via gRPC → OutSystems REST.
+    Calls Verification Service via gRPC -> OutSystems REST.
     Raises HTTP 403 if charity is ineligible (e.g. MISSING_WAIVER).
     Raises HTTP 503 if Verification Service is unreachable.
     """
@@ -65,34 +60,22 @@ async def _verify_claim_eligibility(charity_id: int, listing_id: int) -> None:
             },
         )
 
-# async def _verify_claim_eligibility(charity_id: int, listing_id: int) -> None:
-#     """
-#     Verification gRPC call placeholder.
-#     Contract: raises HTTPException(403) when charity is not eligible.
-#     For now, the service is assumed to return VALID as requested.
-#     """
-#     # This hook keeps orchestration flow explicit and ready for the real proto.
-#     logger.info(
-#         "Verification assumed VALID for charity_id=%s listing_id=%s via %s",
-#         charity_id,
-#         listing_id,
-#         VERIFICATION_GRPC_ADDR,
-#     ) old _verify_claim_eligibility()
 
-async def _post(client: httpx.AsyncClient, url: str, body: dict) -> dict:
-    response = await client.post(url, json=body, timeout=10.0)
-    response.raise_for_status()
-    return response.json()
-
-
-# @app.post("/claims", response_model=ClaimResponse, status_code=201)
-# async def create_claim(body: ClaimCreate): old code
 @app.post("/claims", response_model=ClaimResponse, status_code=201)
 async def create_claim(
     body: ClaimCreate,
     token_payload: Annotated[dict, Depends(verify_jwt_token)],
 ):
-    # 1) Verify eligibility via Verification Service (assumed VALID).
+    # Security: derive charity_id from the verified JWT sub claim, not from
+    # the request body. Prevents a charity from claiming on behalf of another.
+    jwt_charity_id = int(token_payload["sub"])
+    if jwt_charity_id != body.charity_id:
+        raise HTTPException(
+            status_code=403,
+            detail="charity_id in request does not match authenticated identity",
+        )
+
+    # 1) Verify eligibility via Verification Service -> OutSystems.
     await _verify_claim_eligibility(body.charity_id, body.listing_id)
 
     # 2) Soft lock listing in Inventory.
@@ -106,7 +89,7 @@ async def create_claim(
         if code == grpc.StatusCode.NOT_FOUND:
             raise HTTPException(status_code=404, detail="Listing not found")
         if code == grpc.StatusCode.ABORTED:
-            raise HTTPException(status_code=409, detail="Listing already claimed — please refresh")
+            raise HTTPException(status_code=409, detail="Listing already claimed -- please refresh")
         raise HTTPException(status_code=503, detail="Inventory service unavailable")
 
     # 3) Persist to Claim Log service. If this fails, rollback inventory lock.
