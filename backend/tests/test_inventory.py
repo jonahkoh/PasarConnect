@@ -85,7 +85,7 @@ async def test_create_listing(http_db):
         "title": "Bread",
         "description": "Day-old sourdough",
         "quantity": 5,
-        "expiry_date": FUTURE_DATE,
+        "expiry": FUTURE_DATE,
     }
     r = await http_db.post("/listings", json=payload)
     assert r.status_code == 201
@@ -97,7 +97,7 @@ async def test_create_listing(http_db):
 
 
 async def test_get_listing_by_id(http_db):
-    payload = {"vendor_id": "vendor_1", "title": "Apple", "description": "Fresh", "quantity": 3, "expiry_date": FUTURE_DATE}
+    payload = {"vendor_id": "vendor_1", "title": "Apple", "description": "Fresh", "quantity": 3, "expiry": FUTURE_DATE}
     created = (await http_db.post("/listings", json=payload)).json()
     r = await http_db.get(f"/listings/{created['id']}")
     assert r.status_code == 200
@@ -110,13 +110,13 @@ async def test_get_listing_not_found(http_db):
 
 
 async def test_create_listing_zero_quantity(http_db):
-    payload = {"vendor_id": "vendor_1", "title": "X", "description": "Y", "quantity": 0, "expiry_date": FUTURE_DATE}
+    payload = {"vendor_id": "vendor_1", "title": "X", "description": "Y", "quantity": 0, "expiry": FUTURE_DATE}
     r = await http_db.post("/listings", json=payload)
     assert r.status_code == 422
 
 
 async def test_create_listing_past_expiry(http_db):
-    payload = {"vendor_id": "vendor_1", "title": "Stale", "description": "Old", "quantity": 1, "expiry_date": PAST_DATE}
+    payload = {"vendor_id": "vendor_1", "title": "Stale", "description": "Old", "quantity": 1, "expiry": PAST_DATE}
     r = await http_db.post("/listings", json=payload)
     assert r.status_code == 422
 
@@ -128,7 +128,7 @@ async def test_lock_success(lock_db):
     from lock_service import lock_listing
     from models import FoodListing, ListingStatus
 
-    listing = FoodListing(vendor_id="v1", title="T", description="D", quantity=1, expiry_date=FUTURE_DT)
+    listing = FoodListing(vendor_id="v1", title="T", description="D", quantity=1, expiry=FUTURE_DT)
     lock_db.add(listing)
     await lock_db.commit()
     await lock_db.refresh(listing)
@@ -141,7 +141,7 @@ async def test_lock_conflict(lock_db):
     from lock_service import lock_listing, LockConflictError
     from models import FoodListing, ListingStatus
 
-    listing = FoodListing(vendor_id="v1", title="T", description="D", quantity=1, expiry_date=FUTURE_DT)
+    listing = FoodListing(vendor_id="v1", title="T", description="D", quantity=1, expiry=FUTURE_DT)
     lock_db.add(listing)
     await lock_db.commit()
     await lock_db.refresh(listing)
@@ -162,7 +162,7 @@ async def test_sequential_locks(lock_db):
     from lock_service import lock_listing
     from models import FoodListing, ListingStatus
 
-    listing = FoodListing(vendor_id="v1", title="T", description="D", quantity=1, expiry_date=FUTURE_DT)
+    listing = FoodListing(vendor_id="v1", title="T", description="D", quantity=1, expiry=FUTURE_DT)
     lock_db.add(listing)
     await lock_db.commit()
     await lock_db.refresh(listing)
@@ -177,7 +177,7 @@ async def test_stale_version_after_lock(lock_db):
     from lock_service import lock_listing, LockConflictError
     from models import FoodListing, ListingStatus
 
-    listing = FoodListing(vendor_id="v1", title="T", description="D", quantity=1, expiry_date=FUTURE_DT)
+    listing = FoodListing(vendor_id="v1", title="T", description="D", quantity=1, expiry=FUTURE_DT)
     lock_db.add(listing)
     await lock_db.commit()
     await lock_db.refresh(listing)
@@ -192,7 +192,7 @@ async def test_lock_to_sold(lock_db):
     from lock_service import lock_listing
     from models import FoodListing, ListingStatus
 
-    listing = FoodListing(vendor_id="v1", title="T", description="D", quantity=1, expiry_date=FUTURE_DT)
+    listing = FoodListing(vendor_id="v1", title="T", description="D", quantity=1, expiry=FUTURE_DT)
     lock_db.add(listing)
     await lock_db.commit()
     await lock_db.refresh(listing)
@@ -206,7 +206,7 @@ async def test_lock_rollback(lock_db):
     from lock_service import lock_listing
     from models import FoodListing, ListingStatus
 
-    listing = FoodListing(vendor_id="v1", title="T", description="D", quantity=1, expiry_date=FUTURE_DT)
+    listing = FoodListing(vendor_id="v1", title="T", description="D", quantity=1, expiry=FUTURE_DT)
     lock_db.add(listing)
     await lock_db.commit()
     await lock_db.refresh(listing)
