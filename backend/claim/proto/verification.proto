@@ -8,7 +8,7 @@ service Verification {
   rpc CheckVendorCompliance  (VendorComplianceRequest) returns (VerifyResponse);
 }
 
-// --- Charity claim verification ---
+// --- Charity claim verification ---     # have VerifyRequest, leave for now in case of legacy connection
 message VerifyCharityRequest {
   int32 charity_id = 1;
   int32 listing_id = 2;
@@ -25,8 +25,30 @@ message VendorComplianceRequest {
   int32 vendor_id = 1;
 }
 
-// --- Shared response ---
+// --- Shared response ---       # have VerifyResponse!! will clash, leave for now in case of legacy connection, check immedialey
 message VerifyResponse {
   bool   valid  = 1;
   string reason = 2;
+}
+// ── Request ──────────────────────────────────────────────────────────────────
+// Sent by the Claim Service to ask: "is this charity eligible to claim?"
+
+message VerifyRequest {
+  int32 charity_id  = 1;  // The charity attempting the claim
+  int32 listing_id  = 2;  // The food listing being claimed
+}
+
+// ── Response ─────────────────────────────────────────────────────────────────
+// Returned by the Verification Service after checking OutSystems.
+
+message VerifyResponse {
+  bool   approved          = 1;  // true = eligible, false = rejected
+  string rejection_reason  = 2;  // e.g. "MISSING_WAIVER" — empty string if approved
+}
+
+// ── Service ───────────────────────────────────────────────────────────────────
+// One RPC. Claim calls it synchronously before locking inventory.
+
+service VerificationService {
+  rpc VerifyCharity (VerifyRequest) returns (VerifyResponse);
 }

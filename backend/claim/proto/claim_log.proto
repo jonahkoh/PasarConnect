@@ -1,0 +1,44 @@
+syntax = "proto3";
+
+package claimlog;
+
+service ClaimLogService {
+  rpc CreateClaimLog (CreateClaimLogRequest) returns (CreateClaimLogResponse);
+  rpc UpdateClaimStatus (UpdateClaimStatusRequest) returns (UpdateClaimStatusResponse);
+}
+
+enum ClaimStatus {
+  CLAIM_STATUS_UNSPECIFIED = 0;
+  PENDING_COLLECTION = 1;
+  AWAITING_VENDOR_APPROVAL = 2;
+  COMPLETED = 3;
+  CANCELLED = 4;
+}
+
+message UpdateClaimStatusRequest {
+  int32 claim_id = 1;
+  ClaimStatus new_status = 2;
+}
+
+message UpdateClaimStatusResponse {
+  bool success = 1;
+  int32 claim_id = 2;
+  ClaimStatus status = 3;
+  int32 listing_id = 4;
+  int32 listing_version = 5;
+}
+
+message CreateClaimLogRequest {
+  int32 listing_id = 1;
+  int32 charity_id = 2;
+  int32 listing_version = 3;
+  ClaimStatus status = 4;
+}
+
+message CreateClaimLogResponse {
+  int32 id = 1;
+  int32 listing_id = 2;
+  int32 charity_id = 3;
+  int32 listing_version = 4;
+  ClaimStatus status = 5;
+}

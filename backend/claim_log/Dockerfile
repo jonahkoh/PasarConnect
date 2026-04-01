@@ -12,6 +12,13 @@ COPY claim_log/ ./claim_log/
 
 WORKDIR /app/claim_log
 
+# Generate claim-log gRPC stubs consumed by claim orchestrator
+RUN python -m grpc_tools.protoc \
+	-I./proto \
+	--python_out=. \
+	--grpc_python_out=. \
+	./proto/claim_log.proto
+
 EXPOSE 8006
 
 CMD ["uvicorn", "claim_log:app", "--host", "0.0.0.0", "--port", "8006"]

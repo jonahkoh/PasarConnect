@@ -85,7 +85,7 @@ async def test_create_listing(http_db):
         "title": "Bread",
         "description": "Day-old sourdough",
         "quantity": 5,
-        "expiry_date": FUTURE_DATE,
+        "expiry": FUTURE_DATE,
     }
     r = await http_db.post("/listings", json=payload)
     assert r.status_code == 201
@@ -97,7 +97,7 @@ async def test_create_listing(http_db):
 
 
 async def test_get_listing_by_id(http_db):
-    payload = {"vendor_id": "vendor_1", "title": "Apple", "description": "Fresh", "quantity": 3, "expiry_date": FUTURE_DATE}
+    payload = {"vendor_id": "vendor_1", "title": "Apple", "description": "Fresh", "quantity": 3, "expiry": FUTURE_DATE}
     created = (await http_db.post("/listings", json=payload)).json()
     r = await http_db.get(f"/listings/{created['id']}")
     assert r.status_code == 200
@@ -110,15 +110,213 @@ async def test_get_listing_not_found(http_db):
 
 
 async def test_create_listing_zero_quantity(http_db):
-    payload = {"vendor_id": "vendor_1", "title": "X", "description": "Y", "quantity": 0, "expiry_date": FUTURE_DATE}
+    payload = {"vendor_id": "vendor_1", "title": "X", "description": "Y", "quantity": 0, "expiry": FUTURE_DATE}
     r = await http_db.post("/listings", json=payload)
     assert r.status_code == 422
 
 
 async def test_create_listing_past_expiry(http_db):
-    payload = {"vendor_id": "vendor_1", "title": "Stale", "description": "Old", "quantity": 1, "expiry_date": PAST_DATE}
+    payload = {"vendor_id": "vendor_1", "title": "Stale", "description": "Old", "quantity": 1, "expiry": PAST_DATE}
     r = await http_db.post("/listings", json=payload)
     assert r.status_code == 422
+
+
+# ── PUT /listings/{id} tests ──────────────────────────────────────────────────
+
+async def test_update_listing_title(http_db):
+    payload = {"vendor_id": "vendor_1", "title": "Old Title", "description": "Desc", "quantity": 3, "expiry_date": FUTURE_DATE}
+    created = (await http_db.post("/listings", json=payload)).json()
+    r = await http_db.put(f"/listings/{created['id']}", json={"title": "New Title"})
+    assert r.status_code == 200
+    data = r.json()
+    assert data["title"] == "New Title"
+    assert data["description"] == "Desc"   # unchanged
+    assert data["version"] == 1             # incremented
+
+
+async def test_update_listing_quantity(http_db):
+    payload = {"vendor_id": "vendor_1", "title": "Rice", "quantity": 10, "expiry_date": FUTURE_DATE}
+    created = (await http_db.post("/listings", json=payload)).json()
+    r = await http_db.put(f"/listings/{created['id']}", json={"quantity": 20})
+    assert r.status_code == 200
+    assert r.json()["quantity"] == 20
+
+
+async def test_update_listing_not_found(http_db):
+    r = await http_db.put("/listings/999", json={"title": "Ghost"})
+    assert r.status_code == 404
+
+
+async def test_update_listing_invalid_quantity(http_db):
+    payload = {"vendor_id": "vendor_1", "title": "Bread", "quantity": 5, "expiry_date": FUTURE_DATE}
+    created = (await http_db.post("/listings", json=payload)).json()
+    r = await http_db.put(f"/listings/{created['id']}", json={"quantity": 0})
+    assert r.status_code == 422
+
+
+async def test_update_listing_increments_version(http_db):
+    payload = {"vendor_id": "vendor_1", "title": "V Test", "quantity": 1, "expiry_date": FUTURE_DATE}
+    created = (await http_db.post("/listings", json=payload)).json()
+    assert created["version"] == 0
+    r1 = (await http_db.put(f"/listings/{created['id']}", json={"quantity": 2})).json()
+    assert r1["version"] == 1
+    r2 = (await http_db.put(f"/listings/{created['id']}", json={"quantity": 3})).json()
+    assert r2["version"] == 2
+
+
+async def test_update_listing_with_location_sets_geohash(http_db):
+    payload = {"vendor_id": "vendor_1", "title": "Geo Item", "quantity": 1, "expiry_date": FUTURE_DATE}
+    created = (await http_db.post("/listings", json=payload)).json()
+    assert created["geohash"] is None
+
+    r = await http_db.put(f"/listings/{created['id']}", json={"latitude": 1.3, "longitude": 103.8})
+    assert r.status_code == 200
+    data = r.json()
+    assert data["latitude"] == 1.3
+    assert data["longitude"] == 103.8
+    assert data["geohash"] is not None
+
+
+async def test_update_listing_past_expiry_rejected(http_db):
+    payload = {"vendor_id": "vendor_1", "title": "Fresh", "quantity": 1, "expiry_date": FUTURE_DATE}
+    created = (await http_db.post("/listings", json=payload)).json()
+    r = await http_db.put(f"/listings/{created['id']}", json={"expiry_date": PAST_DATE})
+    assert r.status_code == 422
+
+
+# ── DELETE /listings/{id} tests ───────────────────────────────────────────────
+
+async def test_delete_listing(http_db):
+    payload = {"vendor_id": "vendor_1", "title": "To Delete", "quantity": 1, "expiry_date": FUTURE_DATE}
+    created = (await http_db.post("/listings", json=payload)).json()
+    r = await http_db.delete(f"/listings/{created['id']}")
+    assert r.status_code == 204
+    # Confirm it's gone
+    r2 = await http_db.get(f"/listings/{created['id']}")
+    assert r2.status_code == 404
+
+
+async def test_delete_listing_not_found(http_db):
+    r = await http_db.delete("/listings/999")
+    assert r.status_code == 404
+
+
+async def test_delete_listing_removes_from_list(http_db):
+    payload = {"vendor_id": "vendor_1", "title": "Removable", "quantity": 2, "expiry_date": FUTURE_DATE}
+    created = (await http_db.post("/listings", json=payload)).json()
+    await http_db.delete(f"/listings/{created['id']}")
+    listings = (await http_db.get("/listings")).json()
+    ids = [l["id"] for l in listings]
+    assert created["id"] not in ids
+
+
+# ── POST /listings with location tests ───────────────────────────────────────
+
+async def test_create_listing_with_location(http_db):
+    payload = {
+        "vendor_id": "vendor_geo",
+        "title": "Geo Bread",
+        "quantity": 2,
+        "expiry_date": FUTURE_DATE,
+        "latitude": 1.3521,
+        "longitude": 103.8198,
+    }
+    r = await http_db.post("/listings", json=payload)
+    assert r.status_code == 201
+    data = r.json()
+    assert data["latitude"] == 1.3521
+    assert data["longitude"] == 103.8198
+    assert data["geohash"] is not None
+    assert len(data["geohash"]) == 6
+
+
+async def test_create_listing_without_location_no_geohash(http_db):
+    payload = {"vendor_id": "vendor_1", "title": "No Geo", "quantity": 1, "expiry_date": FUTURE_DATE}
+    r = await http_db.post("/listings", json=payload)
+    assert r.status_code == 201
+    data = r.json()
+    assert data["latitude"] is None
+    assert data["longitude"] is None
+    assert data["geohash"] is None
+
+
+# ── GET /listings/search/nearby tests ────────────────────────────────────────
+
+async def test_search_nearby_returns_available_listings(http_db):
+    # Create a listing near Singapore's city center
+    payload = {
+        "vendor_id": "vendor_sg",
+        "title": "Nearby Food",
+        "quantity": 5,
+        "expiry_date": FUTURE_DATE,
+        "latitude": 1.3521,
+        "longitude": 103.8198,
+    }
+    r = await http_db.post("/listings", json=payload)
+    assert r.status_code == 201
+    created_id = r.json()["id"]
+
+    # Search near that location
+    r2 = await http_db.get("/listings/search/nearby", params={"latitude": 1.3521, "longitude": 103.8198, "radius_km": 5})
+    assert r2.status_code == 200
+    results = r2.json()
+    ids = [item["id"] for item in results]
+    assert created_id in ids
+
+
+async def test_search_nearby_excludes_non_available(http_db):
+    # Create a listing, then mark it as sold
+    payload = {
+        "vendor_id": "vendor_sg",
+        "title": "Sold Food",
+        "quantity": 1,
+        "expiry_date": FUTURE_DATE,
+        "latitude": 1.3521,
+        "longitude": 103.8198,
+    }
+    created = (await http_db.post("/listings", json=payload)).json()
+    # Update status to SOLD
+    await http_db.put(f"/listings/{created['id']}", json={"status": "SOLD"})
+
+    r = await http_db.get("/listings/search/nearby", params={"latitude": 1.3521, "longitude": 103.8198, "radius_km": 5})
+    assert r.status_code == 200
+    ids = [item["id"] for item in r.json()]
+    assert created["id"] not in ids
+
+
+async def test_search_nearby_empty_when_no_listings_in_area(http_db):
+    # Search in an area with no listings (middle of the Atlantic Ocean)
+    r = await http_db.get("/listings/search/nearby", params={"latitude": 30.0, "longitude": -40.0, "radius_km": 5})
+    assert r.status_code == 200
+    assert r.json() == []
+
+
+async def test_search_nearby_missing_required_params(http_db):
+    r = await http_db.get("/listings/search/nearby", params={"latitude": 1.3521})
+    assert r.status_code == 422
+
+
+async def test_search_nearby_invalid_latitude(http_db):
+    r = await http_db.get("/listings/search/nearby", params={"latitude": 200, "longitude": 103.8})
+    assert r.status_code == 422
+
+
+async def test_search_nearby_invalid_radius(http_db):
+    # radius_km must be between 0.1 and 100
+    r = await http_db.get("/listings/search/nearby", params={"latitude": 1.3, "longitude": 103.8, "radius_km": 0})
+    assert r.status_code == 422
+
+
+async def test_search_nearby_excludes_listings_without_location(http_db):
+    # Listing without a geohash should not appear in nearby search
+    payload = {"vendor_id": "vendor_1", "title": "No Location", "quantity": 1, "expiry_date": FUTURE_DATE}
+    created = (await http_db.post("/listings", json=payload)).json()
+    assert created["geohash"] is None
+
+    r = await http_db.get("/listings/search/nearby", params={"latitude": 1.3521, "longitude": 103.8198, "radius_km": 100})
+    assert r.status_code == 200
+    ids = [item["id"] for item in r.json()]
+    assert created["id"] not in ids
 
 
 # ── Optimistic locking tests ───────────────────────────────────────────────────
@@ -128,7 +326,7 @@ async def test_lock_success(lock_db):
     from lock_service import lock_listing
     from models import FoodListing, ListingStatus
 
-    listing = FoodListing(vendor_id="v1", title="T", description="D", quantity=1, expiry_date=FUTURE_DT)
+    listing = FoodListing(vendor_id="v1", title="T", description="D", quantity=1, expiry=FUTURE_DT)
     lock_db.add(listing)
     await lock_db.commit()
     await lock_db.refresh(listing)
@@ -141,7 +339,7 @@ async def test_lock_conflict(lock_db):
     from lock_service import lock_listing, LockConflictError
     from models import FoodListing, ListingStatus
 
-    listing = FoodListing(vendor_id="v1", title="T", description="D", quantity=1, expiry_date=FUTURE_DT)
+    listing = FoodListing(vendor_id="v1", title="T", description="D", quantity=1, expiry=FUTURE_DT)
     lock_db.add(listing)
     await lock_db.commit()
     await lock_db.refresh(listing)
@@ -162,7 +360,7 @@ async def test_sequential_locks(lock_db):
     from lock_service import lock_listing
     from models import FoodListing, ListingStatus
 
-    listing = FoodListing(vendor_id="v1", title="T", description="D", quantity=1, expiry_date=FUTURE_DT)
+    listing = FoodListing(vendor_id="v1", title="T", description="D", quantity=1, expiry=FUTURE_DT)
     lock_db.add(listing)
     await lock_db.commit()
     await lock_db.refresh(listing)
@@ -177,7 +375,7 @@ async def test_stale_version_after_lock(lock_db):
     from lock_service import lock_listing, LockConflictError
     from models import FoodListing, ListingStatus
 
-    listing = FoodListing(vendor_id="v1", title="T", description="D", quantity=1, expiry_date=FUTURE_DT)
+    listing = FoodListing(vendor_id="v1", title="T", description="D", quantity=1, expiry=FUTURE_DT)
     lock_db.add(listing)
     await lock_db.commit()
     await lock_db.refresh(listing)
@@ -192,7 +390,7 @@ async def test_lock_to_sold(lock_db):
     from lock_service import lock_listing
     from models import FoodListing, ListingStatus
 
-    listing = FoodListing(vendor_id="v1", title="T", description="D", quantity=1, expiry_date=FUTURE_DT)
+    listing = FoodListing(vendor_id="v1", title="T", description="D", quantity=1, expiry=FUTURE_DT)
     lock_db.add(listing)
     await lock_db.commit()
     await lock_db.refresh(listing)
@@ -206,7 +404,7 @@ async def test_lock_rollback(lock_db):
     from lock_service import lock_listing
     from models import FoodListing, ListingStatus
 
-    listing = FoodListing(vendor_id="v1", title="T", description="D", quantity=1, expiry_date=FUTURE_DT)
+    listing = FoodListing(vendor_id="v1", title="T", description="D", quantity=1, expiry=FUTURE_DT)
     lock_db.add(listing)
     await lock_db.commit()
     await lock_db.refresh(listing)
