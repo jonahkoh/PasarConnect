@@ -32,6 +32,8 @@ class ListingCreateRequest(BaseModel):
     weight_kg: float | None = Field(default=None, gt=0)
     expiry: datetime
     image_url: str = Field(..., min_length=1, max_length=1024)
+    latitude: float | None = Field(default=None, ge=-90, le=90)
+    longitude: float | None = Field(default=None, ge=-180, le=180)
 
     @model_validator(mode="after")
     def validate_pairs(self):
