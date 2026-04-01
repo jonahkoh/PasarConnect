@@ -2,6 +2,7 @@ import grpc
 import grpc.aio
 from datetime import datetime, timezone
 
+import geohash2
 import inventory_pb2
 import inventory_pb2_grpc
 from database import SessionLocal
@@ -9,6 +10,7 @@ from lock_service import LockConflictError, ListingNotFoundError, lock_listing
 from models import FoodListing, ListingStatus
 
 GRPC_PORT = 50051
+GEOHASH_STORE_PRECISION = 6  # ~1.2 km cell — matches HTTP layer constant
 
 # Map the proto enum integers to our SQLAlchemy enum values
 _STATUS_MAP = {
@@ -51,6 +53,14 @@ class InventoryServicer(inventory_pb2_grpc.InventoryServiceServicer):
             return inventory_pb2.CreateListingResponse()
 
         async with SessionLocal() as db:
+            # Treat 0.0 as "not provided" — same sentinel pattern as quantity/weight_kg.
+            # Proto3 doubles default to 0.0 when the field is omitted by the caller.
+            latitude  = request.latitude  if request.latitude  != 0.0 else None
+            longitude = request.longitude if request.longitude != 0.0 else None
+            geohash_val = None
+            if latitude is not None and longitude is not None:
+                geohash_val = geohash2.encode(latitude, longitude, precision=GEOHASH_STORE_PRECISION)
+
             record = FoodListing(
                 vendor_id=request.vendor_id,
                 title=request.title,
@@ -59,6 +69,9 @@ class InventoryServicer(inventory_pb2_grpc.InventoryServiceServicer):
                 weight_kg=request.weight_kg if request.weight_kg > 0 else None,
                 expiry=expiry,
                 image_url=request.image_url or None,
+                latitude=latitude,
+                longitude=longitude,
+                geohash=geohash_val,
             )
             db.add(record)
             await db.commit()
