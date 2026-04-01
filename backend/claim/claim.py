@@ -1,33 +1,32 @@
-"""
+﻿"""
 Claim Service — Orchestrator.
 
 This service is intentionally stateless: no local DB and no ORM models.
 It coordinates the workflow across Verification (gRPC), Inventory (gRPC),
-Claim Log (HTTP), and RabbitMQ.
+Claim Log (gRPC), and RabbitMQ.
 """
 import logging
 import os
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
+from typing import Annotated
 
 import grpc
-import httpx
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 
+import claim_log_client
 import inventory_client
 import publisher
-import claim_log_client
 from schemas import ClaimCreate, ClaimResponse
+from shared.jwt_auth import verify_jwt_token
+from verification_client import CharityNotEligibleError, verify_charity
 
 load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-VERIFICATION_GRPC_HOST = os.getenv("VERIFICATION_GRPC_HOST", "localhost")
-VERIFICATION_GRPC_PORT = os.getenv("VERIFICATION_GRPC_PORT", "50052")
-VERIFICATION_GRPC_ADDR = f"{VERIFICATION_GRPC_HOST}:{VERIFICATION_GRPC_PORT}"
 
-CLAIM_LOG_URL = os.getenv("CLAIM_LOG_URL", "http://localhost:8006")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Stateless service: no startup DB work required.
@@ -37,7 +36,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="PasarConnect — Claim Service", lifespan=lifespan)
 
 
-# ── Routes ────────────────────────────────────────────────────────────────────
+# -- Routes --------------------------------------------------------------------
 
 @app.get("/health")
 async def health():
@@ -46,29 +45,37 @@ async def health():
 
 async def _verify_claim_eligibility(charity_id: int, listing_id: int) -> None:
     """
-    Verification gRPC call placeholder.
-
-    Contract: raises HTTPException(403) when charity is not eligible.
-    For now, the service is assumed to return VALID as requested.
+    Calls Verification Service via gRPC -> OutSystems REST.
+    Raises HTTP 403 if charity is ineligible (e.g. MISSING_WAIVER).
+    Raises HTTP 503 if Verification Service is unreachable.
     """
-    # This hook keeps orchestration flow explicit and ready for the real proto.
-    logger.info(
-        "Verification assumed VALID for charity_id=%s listing_id=%s via %s",
-        charity_id,
-        listing_id,
-        VERIFICATION_GRPC_ADDR,
-    )
-
-
-async def _post(client: httpx.AsyncClient, url: str, body: dict) -> dict:
-    response = await client.post(url, json=body, timeout=10.0)
-    response.raise_for_status()
-    return response.json()
+    try:
+        await verify_charity(charity_id=charity_id, listing_id=listing_id)
+    except CharityNotEligibleError as exc:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error": "charity_not_eligible",
+                "reason": exc.reason,
+            },
+        )
 
 
 @app.post("/claims", response_model=ClaimResponse, status_code=201)
-async def create_claim(body: ClaimCreate):
-    # 1) Verify eligibility via Verification Service (assumed VALID).
+async def create_claim(
+    body: ClaimCreate,
+    token_payload: Annotated[dict, Depends(verify_jwt_token)],
+):
+    # Security: derive charity_id from the verified JWT sub claim, not from
+    # the request body. Prevents a charity from claiming on behalf of another.
+    jwt_charity_id = int(token_payload["sub"])
+    if jwt_charity_id != body.charity_id:
+        raise HTTPException(
+            status_code=403,
+            detail="charity_id in request does not match authenticated identity",
+        )
+
+    # 1) Verify eligibility via Verification Service -> OutSystems.
     await _verify_claim_eligibility(body.charity_id, body.listing_id)
 
     # 2) Soft lock listing in Inventory.
@@ -82,23 +89,20 @@ async def create_claim(body: ClaimCreate):
         if code == grpc.StatusCode.NOT_FOUND:
             raise HTTPException(status_code=404, detail="Listing not found")
         if code == grpc.StatusCode.ABORTED:
-            raise HTTPException(status_code=409, detail="Listing already claimed — please refresh")
+            raise HTTPException(status_code=409, detail="Listing already claimed -- please refresh")
         raise HTTPException(status_code=503, detail="Inventory service unavailable")
 
     # 3) Persist to Claim Log service. If this fails, rollback inventory lock.
     try:
-        async with httpx.AsyncClient() as client:
-            claim_record = await _post(
-                client,
-                f"{CLAIM_LOG_URL}/logs",
-                {
-                    "listing_id": body.listing_id,
-                    "charity_id": body.charity_id,
-                    "listing_version": new_version,
-                    "status": "PENDING_COLLECTION",
-                },
-            )
-    except (httpx.TimeoutException, httpx.HTTPError) as exc:
+        import claim_log_pb2
+
+        claim_record = await claim_log_client.create_claim_log(
+            listing_id=body.listing_id,
+            charity_id=body.charity_id,
+            listing_version=new_version,
+            status=claim_log_pb2.PENDING_COLLECTION,
+        )
+    except grpc.aio.AioRpcError as exc:
         logger.error(
             "Claim Log handoff failed after inventory lock listing_id=%s version=%s: %s",
             body.listing_id,
@@ -137,12 +141,20 @@ async def create_claim(body: ClaimCreate):
 
     # 4) Publish success event (best effort).
     await publisher.publish_claim_success(
-        claim_id=claim_record["id"],
-        listing_id=claim_record["listing_id"],
-        charity_id=claim_record["charity_id"],
+        claim_id=claim_record.id,
+        listing_id=claim_record.listing_id,
+        charity_id=claim_record.charity_id,
     )
 
-    return claim_record
+    return {
+        "id": claim_record.id,
+        "listing_id": claim_record.listing_id,
+        "charity_id": claim_record.charity_id,
+        "listing_version": claim_record.listing_version,
+        "status": claim_log_pb2.ClaimStatus.Name(claim_record.status),
+        "created_at": getattr(claim_record, "created_at", datetime.now(timezone.utc)),
+        "updated_at": getattr(claim_record, "updated_at", None),
+    }
 
 
 @app.post("/claims/{claim_id}/arrive")

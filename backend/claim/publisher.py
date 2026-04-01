@@ -10,6 +10,8 @@ import os
 import aio_pika
 
 RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "localhost")
+RABBITMQ_USER = os.getenv("RABBITMQ_USER", "guest")
+RABBITMQ_PASS = os.getenv("RABBITMQ_PASS", "guest")
 EXCHANGE_NAME = "PasarConnect"
 
 logger = logging.getLogger(__name__)
@@ -18,7 +20,7 @@ logger = logging.getLogger(__name__)
 async def _publish(routing_key: str, payload: dict) -> None:
     """Publish a durable JSON event to RabbitMQ; logs warning on any failure."""
     try:
-        connection = await aio_pika.connect_robust(f"amqp://guest:guest@{RABBITMQ_HOST}/")
+        connection = await aio_pika.connect_robust(f"amqp://{RABBITMQ_USER}:{RABBITMQ_PASS}@{RABBITMQ_HOST}/")
         async with connection:
             channel = await connection.channel()
             exchange = await channel.declare_exchange(

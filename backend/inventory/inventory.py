@@ -28,6 +28,14 @@ async def lifespan(app: FastAPI):
                     IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'listing_status_enum') THEN
                         ALTER TYPE listing_status_enum ADD VALUE IF NOT EXISTS 'SOLD_PENDING_COLLECTION';
                     END IF;
+
+                    IF EXISTS (
+                        SELECT 1
+                        FROM information_schema.columns
+                        WHERE table_name = 'food_listings' AND column_name = 'expiry_date'
+                    ) THEN
+                        ALTER TABLE food_listings RENAME COLUMN expiry_date TO expiry;
+                    END IF;
                 END
                 $$;
                 """

@@ -2,15 +2,32 @@ syntax = "proto3";
 
 package inventory;
 
-// The only RPC the Inventory Service exposes over gRPC.
+// LockListing is used by claim and payment orchestration flows.
 // Called by: Claim Service (AVAILABLE → PENDING_COLLECTION)
 //            Claim Service (PENDING_COLLECTION → AVAILABLE)  **Rollback if claim redraw**
 //            Payment Service (AVAILABLE → PENDING_PAYMENT)
 //            Payment Service (PENDING_PAYMENT → SOLD)
 //            Payment Service (PENDING_PAYMENT → AVAILABLE)   **Rollback if payment fails**
+// CreateListing is used by Listing Service to create inventory rows.
 
 service InventoryService {
+  rpc CreateListing (CreateListingRequest) returns (CreateListingResponse);
   rpc LockListing (LockListingRequest) returns (LockListingResponse);
+}
+
+message CreateListingRequest {
+  string vendor_id = 1;
+  string title = 2;
+  string description = 3;
+  int32 quantity = 4;
+  double weight_kg = 5;
+  string expiry = 6;
+  string image_url = 7;
+}
+
+message CreateListingResponse {
+  bool success = 1;
+  int32 listing_id = 2;
 }
 
 // The four valid status transitions via gRPC.

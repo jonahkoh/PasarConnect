@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from typing import Optional
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from models import ListingStatus
 
 
@@ -9,17 +9,30 @@ class FoodListingCreate(BaseModel):
     vendor_id: str = Field(..., min_length=1, max_length=64)
     title: str = Field(..., min_length=1, max_length=255)
     description: Optional[str] = Field(None, max_length=1024)
+<<<<<<< copilot/create-test-cases-for-endpoints
     quantity: int = Field(..., gt=0)
     expiry_date: datetime
     latitude: Optional[float] = Field(None, ge=-90, le=90)
     longitude: Optional[float] = Field(None, ge=-180, le=180)
+=======
+    quantity: Optional[int] = Field(default=None, gt=0)
+    weight_kg: Optional[float] = Field(default=None, gt=0)
+    expiry: datetime
+    image_url: Optional[str] = Field(default=None, max_length=1024)
+>>>>>>> main
 
-    @field_validator("expiry_date")
+    @model_validator(mode="after")
+    def validate_required_pairs(self):
+        if self.quantity is None and self.weight_kg is None:
+            raise ValueError("Either quantity or weight_kg must be provided")
+        return self
+
+    @field_validator("expiry")
     @classmethod
-    def must_be_future(cls, v: datetime) -> datetime:
+    def expiry_must_be_future(cls, v: datetime) -> datetime:
         v_utc = v if v.tzinfo else v.replace(tzinfo=timezone.utc)
         if v_utc <= datetime.now(tz=timezone.utc):
-            raise ValueError("expiry_date must be in the future")
+            raise ValueError("expiry must be in the future")
         return v
 
 
@@ -50,8 +63,10 @@ class FoodListingResponse(BaseModel):
     vendor_id: str
     title: str
     description: Optional[str]
-    quantity: int
-    expiry_date: datetime
+    quantity: Optional[int]
+    weight_kg: Optional[float]
+    expiry: datetime
+    image_url: Optional[str]
     status: ListingStatus
     version: int
     latitude: Optional[float]
