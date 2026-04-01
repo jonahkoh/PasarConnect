@@ -15,7 +15,7 @@ COPY claim/ ./claim/
 COPY shared/ ./shared/
 WORKDIR /app/claim
 
-# Generate gRPC stubs from the service's own proto copy
+# Generate gRPC stubs from the service's own proto copies
 RUN python -m grpc_tools.protoc \
     -I./proto \
     --python_out=. \

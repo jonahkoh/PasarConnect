@@ -2,6 +2,34 @@ syntax = "proto3";
 
 package verification;
 
+service Verification {
+  rpc VerifyCharity          (VerifyCharityRequest)   returns (VerifyResponse);
+  rpc VerifyPublicUser       (VerifyUserRequest)       returns (VerifyResponse);
+  rpc CheckVendorCompliance  (VendorComplianceRequest) returns (VerifyResponse);
+}
+
+// --- Charity claim verification ---     # have VerifyRequest, leave for now in case of legacy connection
+message VerifyCharityRequest {
+  int32 charity_id = 1;
+  int32 listing_id = 2;
+}
+
+// --- Public user purchase verification ---
+message VerifyUserRequest {
+  int32 user_id    = 1;
+  int32 listing_id = 2;
+}
+
+// --- Vendor NEA compliance check ---
+message VendorComplianceRequest {
+  int32 vendor_id = 1;
+}
+
+// --- Shared response ---       # have VerifyResponse!! will clash, leave for now in case of legacy connection, check immedialey
+message VerifyResponse {
+  bool   valid  = 1;
+  string reason = 2;
+}
 // ── Request ──────────────────────────────────────────────────────────────────
 // Sent by the Claim Service to ask: "is this charity eligible to claim?"
 

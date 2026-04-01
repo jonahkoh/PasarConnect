@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+package verification;
+
+service Verification {
+  rpc VerifyCharity          (VerifyCharityRequest)   returns (VerifyResponse);
+  rpc VerifyPublicUser       (VerifyUserRequest)       returns (VerifyResponse);
+  rpc CheckVendorCompliance  (VendorComplianceRequest) returns (VerifyResponse);
+}
+
+// --- Charity claim verification ---
+message VerifyCharityRequest {
+  int32 charity_id = 1;
+  int32 listing_id = 2;
+}
+
+// --- Public user purchase verification ---
+message VerifyUserRequest {
+  int32 user_id    = 1;
+  int32 listing_id = 2;
+}
+
+// --- Vendor NEA compliance check ---
+message VendorComplianceRequest {
+  int32 vendor_id = 1;
+}
+
+// --- Shared response ---
+message VerifyResponse {
+  bool   valid  = 1;
+  string reason = 2;
+}
