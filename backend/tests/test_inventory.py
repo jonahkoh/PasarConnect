@@ -1,5 +1,5 @@
 """
-Inventory Service tests — HTTP layer + optimistic locking (14 tests).
+Inventory Service tests — HTTP layer + optimistic locking (27 tests).
 Uses in-memory SQLite so no real DB is needed.
 The sys.path is managed by backend/conftest.py before each test.
 """
@@ -124,7 +124,7 @@ async def test_create_listing_past_expiry(http_db):
 # ── PUT /listings/{id} tests ──────────────────────────────────────────────────
 
 async def test_update_listing_title(http_db):
-    payload = {"vendor_id": "vendor_1", "title": "Old Title", "description": "Desc", "quantity": 3, "expiry_date": FUTURE_DATE}
+    payload = {"vendor_id": "vendor_1", "title": "Old Title", "description": "Desc", "quantity": 3, "expiry": FUTURE_DATE}
     created = (await http_db.post("/listings", json=payload)).json()
     r = await http_db.put(f"/listings/{created['id']}", json={"title": "New Title"})
     assert r.status_code == 200
@@ -135,7 +135,7 @@ async def test_update_listing_title(http_db):
 
 
 async def test_update_listing_quantity(http_db):
-    payload = {"vendor_id": "vendor_1", "title": "Rice", "quantity": 10, "expiry_date": FUTURE_DATE}
+    payload = {"vendor_id": "vendor_1", "title": "Rice", "quantity": 10, "expiry": FUTURE_DATE}
     created = (await http_db.post("/listings", json=payload)).json()
     r = await http_db.put(f"/listings/{created['id']}", json={"quantity": 20})
     assert r.status_code == 200
@@ -148,14 +148,14 @@ async def test_update_listing_not_found(http_db):
 
 
 async def test_update_listing_invalid_quantity(http_db):
-    payload = {"vendor_id": "vendor_1", "title": "Bread", "quantity": 5, "expiry_date": FUTURE_DATE}
+    payload = {"vendor_id": "vendor_1", "title": "Bread", "quantity": 5, "expiry": FUTURE_DATE}
     created = (await http_db.post("/listings", json=payload)).json()
     r = await http_db.put(f"/listings/{created['id']}", json={"quantity": 0})
     assert r.status_code == 422
 
 
 async def test_update_listing_increments_version(http_db):
-    payload = {"vendor_id": "vendor_1", "title": "V Test", "quantity": 1, "expiry_date": FUTURE_DATE}
+    payload = {"vendor_id": "vendor_1", "title": "V Test", "quantity": 1, "expiry": FUTURE_DATE}
     created = (await http_db.post("/listings", json=payload)).json()
     assert created["version"] == 0
     r1 = (await http_db.put(f"/listings/{created['id']}", json={"quantity": 2})).json()
@@ -165,7 +165,7 @@ async def test_update_listing_increments_version(http_db):
 
 
 async def test_update_listing_with_location_sets_geohash(http_db):
-    payload = {"vendor_id": "vendor_1", "title": "Geo Item", "quantity": 1, "expiry_date": FUTURE_DATE}
+    payload = {"vendor_id": "vendor_1", "title": "Geo Item", "quantity": 1, "expiry": FUTURE_DATE}
     created = (await http_db.post("/listings", json=payload)).json()
     assert created["geohash"] is None
 
@@ -178,16 +178,16 @@ async def test_update_listing_with_location_sets_geohash(http_db):
 
 
 async def test_update_listing_past_expiry_rejected(http_db):
-    payload = {"vendor_id": "vendor_1", "title": "Fresh", "quantity": 1, "expiry_date": FUTURE_DATE}
+    payload = {"vendor_id": "vendor_1", "title": "Fresh", "quantity": 1, "expiry": FUTURE_DATE}
     created = (await http_db.post("/listings", json=payload)).json()
-    r = await http_db.put(f"/listings/{created['id']}", json={"expiry_date": PAST_DATE})
+    r = await http_db.put(f"/listings/{created['id']}", json={"expiry": PAST_DATE})
     assert r.status_code == 422
 
 
 # ── DELETE /listings/{id} tests ───────────────────────────────────────────────
 
 async def test_delete_listing(http_db):
-    payload = {"vendor_id": "vendor_1", "title": "To Delete", "quantity": 1, "expiry_date": FUTURE_DATE}
+    payload = {"vendor_id": "vendor_1", "title": "To Delete", "quantity": 1, "expiry": FUTURE_DATE}
     created = (await http_db.post("/listings", json=payload)).json()
     r = await http_db.delete(f"/listings/{created['id']}")
     assert r.status_code == 204
@@ -202,7 +202,7 @@ async def test_delete_listing_not_found(http_db):
 
 
 async def test_delete_listing_removes_from_list(http_db):
-    payload = {"vendor_id": "vendor_1", "title": "Removable", "quantity": 2, "expiry_date": FUTURE_DATE}
+    payload = {"vendor_id": "vendor_1", "title": "Removable", "quantity": 2, "expiry": FUTURE_DATE}
     created = (await http_db.post("/listings", json=payload)).json()
     await http_db.delete(f"/listings/{created['id']}")
     listings = (await http_db.get("/listings")).json()
@@ -217,7 +217,7 @@ async def test_create_listing_with_location(http_db):
         "vendor_id": "vendor_geo",
         "title": "Geo Bread",
         "quantity": 2,
-        "expiry_date": FUTURE_DATE,
+        "expiry": FUTURE_DATE,
         "latitude": 1.3521,
         "longitude": 103.8198,
     }
@@ -231,7 +231,7 @@ async def test_create_listing_with_location(http_db):
 
 
 async def test_create_listing_without_location_no_geohash(http_db):
-    payload = {"vendor_id": "vendor_1", "title": "No Geo", "quantity": 1, "expiry_date": FUTURE_DATE}
+    payload = {"vendor_id": "vendor_1", "title": "No Geo", "quantity": 1, "expiry": FUTURE_DATE}
     r = await http_db.post("/listings", json=payload)
     assert r.status_code == 201
     data = r.json()
@@ -248,7 +248,7 @@ async def test_search_nearby_returns_available_listings(http_db):
         "vendor_id": "vendor_sg",
         "title": "Nearby Food",
         "quantity": 5,
-        "expiry_date": FUTURE_DATE,
+        "expiry": FUTURE_DATE,
         "latitude": 1.3521,
         "longitude": 103.8198,
     }
@@ -270,7 +270,7 @@ async def test_search_nearby_excludes_non_available(http_db):
         "vendor_id": "vendor_sg",
         "title": "Sold Food",
         "quantity": 1,
-        "expiry_date": FUTURE_DATE,
+        "expiry": FUTURE_DATE,
         "latitude": 1.3521,
         "longitude": 103.8198,
     }
@@ -309,7 +309,7 @@ async def test_search_nearby_invalid_radius(http_db):
 
 async def test_search_nearby_excludes_listings_without_location(http_db):
     # Listing without a geohash should not appear in nearby search
-    payload = {"vendor_id": "vendor_1", "title": "No Location", "quantity": 1, "expiry_date": FUTURE_DATE}
+    payload = {"vendor_id": "vendor_1", "title": "No Location", "quantity": 1, "expiry": FUTURE_DATE}
     created = (await http_db.post("/listings", json=payload)).json()
     assert created["geohash"] is None
 
