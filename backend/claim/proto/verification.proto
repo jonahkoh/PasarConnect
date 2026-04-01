@@ -2,53 +2,38 @@ syntax = "proto3";
 
 package verification;
 
-service Verification {
-  rpc VerifyCharity          (VerifyCharityRequest)   returns (VerifyResponse);
-  rpc VerifyPublicUser       (VerifyUserRequest)       returns (VerifyResponse);
-  rpc CheckVendorCompliance  (VendorComplianceRequest) returns (VerifyResponse);
+// ── Request messages ─────────────────────────────────────────────────────────
+
+// Charity eligibility — used by Claim Service
+message VerifyRequest {
+  int32 charity_id  = 1;
+  int32 listing_id  = 2;
 }
 
-// --- Charity claim verification ---     # have VerifyRequest, leave for now in case of legacy connection
-message VerifyCharityRequest {
-  int32 charity_id = 1;
-  int32 listing_id = 2;
-}
-
-// --- Public user purchase verification ---
+// Public user purchase check — used by Payment Service (future)
 message VerifyUserRequest {
   int32 user_id    = 1;
   int32 listing_id = 2;
 }
 
-// --- Vendor NEA compliance check ---
+// Vendor NEA/food-safety compliance — used by Listing Service (future)
 message VendorComplianceRequest {
   int32 vendor_id = 1;
 }
 
-// --- Shared response ---       # have VerifyResponse!! will clash, leave for now in case of legacy connection, check immedialey
-message VerifyResponse {
-  bool   valid  = 1;
-  string reason = 2;
-}
-// ── Request ──────────────────────────────────────────────────────────────────
-// Sent by the Claim Service to ask: "is this charity eligible to claim?"
-
-message VerifyRequest {
-  int32 charity_id  = 1;  // The charity attempting the claim
-  int32 listing_id  = 2;  // The food listing being claimed
-}
-
 // ── Response ─────────────────────────────────────────────────────────────────
-// Returned by the Verification Service after checking OutSystems.
-
+// Shared response for all three RPCs.
 message VerifyResponse {
   bool   approved          = 1;  // true = eligible, false = rejected
   string rejection_reason  = 2;  // e.g. "MISSING_WAIVER" — empty string if approved
 }
 
 // ── Service ───────────────────────────────────────────────────────────────────
-// One RPC. Claim calls it synchronously before locking inventory.
-
 service VerificationService {
-  rpc VerifyCharity (VerifyRequest) returns (VerifyResponse);
+  // Called synchronously by Claim Service before locking inventory.
+  rpc VerifyCharity         (VerifyRequest)           returns (VerifyResponse);
+  // Called by Payment Service before processing a public marketplace purchase.
+  rpc VerifyPublicUser      (VerifyUserRequest)        returns (VerifyResponse);
+  // Called by Listing Service to confirm vendor is NEA/food-safety compliant.
+  rpc CheckVendorCompliance (VendorComplianceRequest)  returns (VerifyResponse);
 }
