@@ -30,8 +30,6 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-CLAIM_LOG_URL = os.getenv("CLAIM_LOG_URL", "http://localhost:8006")
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()   # create waitlist_entries table if it doesn't exist
@@ -48,11 +46,7 @@ app.include_router(waitlist_router.router)
 async def health():
     return {"status": "healthy", "service": "claim"}
 
-async def _post(client: httpx.AsyncClient, url: str, body: dict) -> dict:
-    response = await client.post(url, json=body, timeout=10.0)
-    response.raise_for_status()
-    return response.json()
-    
+
 async def _verify_claim_eligibility(charity_id: int, listing_id: int) -> None:
     """
     Calls Verification Service via gRPC -> OutSystems REST.
@@ -173,37 +167,37 @@ async def cancel_claim(claim_id: int, body: CancelClaimRequest):
     Cancel an active PENDING_COLLECTION claim.
 
     Flow:
-      1. Fetch claim from Claim Log — get listing_id + current listing_version.
-      2. Validate: caller must be the claim owner, claim must be PENDING_COLLECTION.
+      1. Fetch claim from Claim Log via gRPC — get listing_id, charity_id, listing_version.
+      2. Validate: caller must be the claim owner; status must be PENDING_COLLECTION.
       3. Rollback Inventory: PENDING_COLLECTION → AVAILABLE  (returns v_available).
-      4. Mark claim CANCELLED in Claim Log.
+      4. Mark claim CANCELLED in Claim Log via gRPC.
       5. Walk waitlist in FIFO order:
            a. Verify next charity (quota + legal check via Verification Service).
-           b. If eligible: lock Inventory AVAILABLE → PENDING_COLLECTION (v_available → v_new),
+           b. If eligible: lock Inventory AVAILABLE → PENDING_COLLECTION,
               create a new claim log entry, mark waitlist entry PROMOTED,
               publish claim.waitlist.promoted → Notification Service WebSockets the charity.
            c. If ineligible: mark CANCELLED, try next charity.
-           d. If queue is exhausted: publish claim.cancelled (item is now freely claimable).
+           d. If queue is exhausted: publish claim.cancelled (item is freely claimable again).
     """
-    # 1. Fetch claim record
-    async with httpx.AsyncClient() as client:
-        resp = await client.get(f"{CLAIM_LOG_URL}/logs/{claim_id}", timeout=10.0)
-        if resp.status_code == 404:
-            raise HTTPException(status_code=404, detail="Claim not found")
-        resp.raise_for_status()
-        claim = resp.json()
+    import claim_log_pb2
+
+    # 1. Fetch claim record via gRPC
+    try:
+        claim = await claim_log_client.get_claim_log(claim_id)
+    except grpc.aio.AioRpcError as exc:
+        raise claim_log_client.map_claim_log_grpc_error(exc)
 
     # 2. Validate ownership and status
-    if claim["charity_id"] != body.charity_id:
+    if claim.charity_id != body.charity_id:
         raise HTTPException(status_code=403, detail="Cannot cancel another charity's claim")
-    if claim["status"] != "PENDING_COLLECTION":
+    if claim.status != claim_log_pb2.PENDING_COLLECTION:
         raise HTTPException(
             status_code=409,
-            detail=f"Cannot cancel a claim with status '{claim['status']}'",
+            detail="Cannot cancel a claim that is not PENDING_COLLECTION",
         )
 
-    listing_id      = claim["listing_id"]
-    listing_version = claim["listing_version"]
+    listing_id      = claim.listing_id
+    listing_version = claim.listing_version
 
     # 3. Rollback Inventory: PENDING_COLLECTION → AVAILABLE  (v → v+1)
     try:
@@ -216,14 +210,11 @@ async def cancel_claim(claim_id: int, body: CancelClaimRequest):
             detail=f"Inventory rollback failed: {exc.details()}",
         )
 
-    # 4. Mark claim as CANCELLED in Claim Log
-    async with httpx.AsyncClient() as client:
-        patch_resp = await client.patch(
-            f"{CLAIM_LOG_URL}/logs/{claim_id}",
-            json={"status": "CANCELLED"},
-            timeout=10.0,
-        )
-        patch_resp.raise_for_status()
+    # 4. Mark claim as CANCELLED in Claim Log via gRPC
+    try:
+        await claim_log_client.update_claim_status(claim_id, claim_log_pb2.CANCELLED)
+    except grpc.aio.AioRpcError as exc:
+        raise claim_log_client.map_claim_log_grpc_error(exc)
 
     logger.info(
         "Claim %s cancelled by charity %s — listing %s rolled back to v%s",
@@ -231,11 +222,9 @@ async def cancel_claim(claim_id: int, body: CancelClaimRequest):
     )
 
     # 5. Promote next from waitlist (auto-assigns listing to next eligible charity)
-    #    available_version is passed so the promotion lock uses the correct version.
     promoted_charity_id, _ = await try_promote_next(
         listing_id=listing_id,
         available_version=available_version,
-        claim_log_url=CLAIM_LOG_URL,
     )
 
     if not promoted_charity_id:

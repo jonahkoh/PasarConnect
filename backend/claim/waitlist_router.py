@@ -13,11 +13,11 @@ Internal helper (used by cancel_claim in claim.py):
 import logging
 
 import grpc
-import httpx
 from fastapi import APIRouter, HTTPException
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
+import claim_log_client
 import inventory_client
 import publisher
 import verification_client
@@ -123,7 +123,6 @@ async def leave_waitlist(listing_id: int, charity_id: int):
 async def try_promote_next(
     listing_id: int,
     available_version: int,
-    claim_log_url: str,
 ) -> tuple[int | None, int]:
     """
     Walk through the WAITING queue in FIFO order.
@@ -187,25 +186,19 @@ async def try_promote_next(
             # Item may have been grabbed by someone else — abort promotion
             return None, current_version
 
-        # 3. Create claim log entry for promoted charity
+        # 3. Create claim log entry for promoted charity via gRPC
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.post(
-                    f"{claim_log_url}/logs",
-                    json={
-                        "listing_id": listing_id,
-                        "charity_id": charity_id,
-                        "listing_version": new_version,
-                        "status": "PENDING_COLLECTION",
-                    },
-                    timeout=10.0,
-                )
-                resp.raise_for_status()
-                claim_record = resp.json()
-        except (httpx.TimeoutException, httpx.HTTPError) as exc:
+            import claim_log_pb2
+            claim_record = await claim_log_client.create_claim_log(
+                listing_id=listing_id,
+                charity_id=charity_id,
+                listing_version=new_version,
+                status=claim_log_pb2.PENDING_COLLECTION,
+            )
+        except grpc.aio.AioRpcError as exc:
             logger.error(
-                "Claim log failed for promoted charity %s listing %s: %s — rolling back",
-                charity_id, listing_id, exc,
+                "Claim log failed for promoted charity %s listing %s: [%s] %s — rolling back",
+                charity_id, listing_id, exc.code(), exc.details(),
             )
             # Roll back the inventory lock we just applied
             try:
@@ -223,7 +216,7 @@ async def try_promote_next(
 
         # 5. Publish promotion event → Notification Service sends WebSocket to charity
         await publisher.publish_waitlist_promoted(
-            claim_id=claim_record["id"],
+            claim_id=claim_record.id,
             listing_id=listing_id,
             charity_id=charity_id,
         )
