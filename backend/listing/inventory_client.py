@@ -26,6 +26,8 @@ async def create_listing(payload: dict) -> int:
         weight_kg=payload.get("weight_kg") or 0,
         expiry=payload.get("expiry") or "",
         image_url=payload.get("image_url") or "",
+        latitude=payload.get("latitude") or 0.0,
+        longitude=payload.get("longitude") or 0.0,
     )
 
     try:
