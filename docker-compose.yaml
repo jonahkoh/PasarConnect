@@ -50,6 +50,22 @@ services:
       timeout: 5s
       retries: 10
 
+  verification-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER:     ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB:       ${VERIFICATION_DB_NAME}
+    ports:
+      - "5436:5432"
+    volumes:
+      - verification-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${VERIFICATION_DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   # ── Message Broker ─────────────────────────────────────────────────────────
 
   rabbitmq:
@@ -115,6 +131,8 @@ services:
       VERIFICATION_GRPC_HOST:  ${VERIFICATION_GRPC_HOST}
       VERIFICATION_GRPC_PORT:  ${VERIFICATION_GRPC_PORT}
       PUBLIC_KEY_PATH:         ${PUBLIC_KEY_PATH}
+      # Waitlist table lives in the same Postgres instance as claim-log
+      WAITLIST_DATABASE_URL:   postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${CLAIM_LOG_DB_HOST}:${CLAIM_LOG_DB_PORT}/${CLAIM_LOG_DB_NAME}
     volumes:
       - ./keys:/app/keys:ro
     depends_on:
@@ -130,20 +148,26 @@ services:
   verification-service:
     build:
       context: ./backend
-      dockerfile: outsystems/Dockerfile
+      dockerfile: verification_service/Dockerfile
     ports:
       - "8007:8007"   # HTTP (health + login endpoints)
       - "50052:50052" # gRPC
     environment:
-      VERIFICATION_GRPC_PORT:    ${VERIFICATION_GRPC_PORT}
-      OUTSYSTEMS_API_URL:        ${OUTSYSTEMS_API_URL}
-      OUTSYSTEMS_API_KEY:        ${OUTSYSTEMS_API_KEY}
+      VERIFICATION_GRPC_PORT:     ${VERIFICATION_GRPC_PORT}
+      DATABASE_URL:               postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${VERIFICATION_DB_HOST}:${VERIFICATION_DB_PORT}/${VERIFICATION_DB_NAME}
+      MAX_DAILY_CLAIMS:           ${MAX_DAILY_CLAIMS}
+      MAX_DAILY_PURCHASES:        ${MAX_DAILY_PURCHASES}
+      OUTSYSTEMS_API_URL:         ${OUTSYSTEMS_API_URL}
+      OUTSYSTEMS_API_KEY:         ${OUTSYSTEMS_API_KEY}
       OUTSYSTEMS_TIMEOUT_SECONDS: ${OUTSYSTEMS_TIMEOUT_SECONDS}
-      PUBLIC_KEY_PATH:           ${PUBLIC_KEY_PATH}
-      MOCK_OUTSYSTEMS:           ${MOCK_OUTSYSTEMS}
-      MOCK_OUTSYSTEMS_APPROVED:  ${MOCK_OUTSYSTEMS_APPROVED}
+      PUBLIC_KEY_PATH:            ${PUBLIC_KEY_PATH}
+      MOCK_OUTSYSTEMS:            ${MOCK_OUTSYSTEMS}
+      MOCK_OUTSYSTEMS_APPROVED:   ${MOCK_OUTSYSTEMS_APPROVED}
     volumes:
       - ./keys:/app/keys:ro
+    depends_on:
+      verification-db:
+        condition: service_healthy
 
   claim-log-service:
     build:
@@ -222,3 +246,4 @@ volumes:
   inventory-db-data:
   claim-log-db-data:
   payment-log-db-data:
+  verification-db-data:
