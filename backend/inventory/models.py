@@ -1,10 +1,6 @@
 import enum
 import datetime
-<<<<<<< copilot/create-test-cases-for-endpoints
 from sqlalchemy import Enum as SAEnum, Float, Integer, String, DateTime, text, func
-=======
-from sqlalchemy import Enum as SAEnum, Integer, String, DateTime, Float, text, func
->>>>>>> main
 from sqlalchemy.orm import Mapped, mapped_column
 from database import Base
 
