@@ -161,3 +161,165 @@ async def test_create_listing_inventory_unsuccessful_returns_500(listing_client)
     assert response.status_code == 500
     assert response.json()["detail"] == "Inventory failed to create listing"
     listing_client["mock_publish"].assert_not_called()
+
+
+# ── Location field tests ───────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_create_listing_with_location(listing_client):
+    """latitude and longitude are forwarded to inventory_client.create_listing."""
+    payload = {
+        "vendor_id": "vendor_geo",
+        "title": "Geo Bread",
+        "quantity": 2,
+        "weight_kg": None,
+        "expiry": "2099-12-31T12:00:00Z",
+        "image_url": "https://example.com/geo.jpg",
+        "latitude": 1.3521,
+        "longitude": 103.8198,
+    }
+
+    response = await listing_client["client"].post("/api/listings", json=payload)
+
+    assert response.status_code == 201
+    assert response.json() == {"listing_id": 123}
+
+    call_kwargs = listing_client["mock_create"].call_args[0][0]
+    assert call_kwargs["latitude"] == 1.3521
+    assert call_kwargs["longitude"] == 103.8198
+
+
+@pytest.mark.asyncio
+async def test_create_listing_without_location(listing_client):
+    """latitude and longitude default to None when omitted; inventory_client still called."""
+    payload = {
+        "vendor_id": "vendor_1",
+        "title": "No Location",
+        "quantity": 3,
+        "weight_kg": None,
+        "expiry": "2099-12-31T12:00:00Z",
+        "image_url": "https://example.com/noloc.jpg",
+    }
+
+    response = await listing_client["client"].post("/api/listings", json=payload)
+
+    assert response.status_code == 201
+    call_kwargs = listing_client["mock_create"].call_args[0][0]
+    assert call_kwargs.get("latitude") is None
+    assert call_kwargs.get("longitude") is None
+
+
+@pytest.mark.asyncio
+async def test_create_listing_invalid_latitude(listing_client):
+    """Latitude outside [-90, 90] should be rejected at the HTTP layer (422)."""
+    payload = {
+        "vendor_id": "vendor_1",
+        "title": "Bad Lat",
+        "quantity": 1,
+        "expiry": "2099-12-31T12:00:00Z",
+        "image_url": "https://example.com/bad.jpg",
+        "latitude": 200.0,   # invalid
+        "longitude": 103.8,
+    }
+
+    response = await listing_client["client"].post("/api/listings", json=payload)
+
+    assert response.status_code == 422
+    listing_client["mock_create"].assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_create_listing_invalid_longitude(listing_client):
+    """Longitude outside [-180, 180] should be rejected at the HTTP layer (422)."""
+    payload = {
+        "vendor_id": "vendor_1",
+        "title": "Bad Long",
+        "quantity": 1,
+        "expiry": "2099-12-31T12:00:00Z",
+        "image_url": "https://example.com/bad.jpg",
+        "latitude": 1.3,
+        "longitude": -999.0,  # invalid
+    }
+
+    response = await listing_client["client"].post("/api/listings", json=payload)
+
+    assert response.status_code == 422
+    listing_client["mock_create"].assert_not_called()
+    """latitude and longitude are forwarded to inventory_client.create_listing."""
+    payload = {
+        "vendor_id": "vendor_geo",
+        "title": "Geo Bread",
+        "quantity": 2,
+        "weight_kg": None,
+        "expiry": "2099-12-31T12:00:00Z",
+        "image_url": "https://example.com/geo.jpg",
+        "latitude": 1.3521,
+        "longitude": 103.8198,
+    }
+
+    response = await listing_client["client"].post("/api/listings", json=payload)
+
+    assert response.status_code == 201
+    assert response.json() == {"listing_id": 123}
+
+    call_kwargs = listing_client["mock_create"].call_args[0][0]
+    assert call_kwargs["latitude"] == 1.3521
+    assert call_kwargs["longitude"] == 103.8198
+
+
+@pytest.mark.asyncio
+async def test_create_listing_without_location(listing_client):
+    """latitude and longitude default to None when omitted; inventory_client still called."""
+    payload = {
+        "vendor_id": "vendor_1",
+        "title": "No Location",
+        "quantity": 3,
+        "weight_kg": None,
+        "expiry": "2099-12-31T12:00:00Z",
+        "image_url": "https://example.com/noloc.jpg",
+    }
+
+    response = await listing_client["client"].post("/api/listings", json=payload)
+
+    assert response.status_code == 201
+    call_kwargs = listing_client["mock_create"].call_args[0][0]
+    assert call_kwargs.get("latitude") is None
+    assert call_kwargs.get("longitude") is None
+
+
+@pytest.mark.asyncio
+async def test_create_listing_invalid_latitude(listing_client):
+    """Latitude outside [-90, 90] should be rejected at the HTTP layer (422)."""
+    payload = {
+        "vendor_id": "vendor_1",
+        "title": "Bad Lat",
+        "quantity": 1,
+        "expiry": "2099-12-31T12:00:00Z",
+        "image_url": "https://example.com/bad.jpg",
+        "latitude": 200.0,   # invalid
+        "longitude": 103.8,
+    }
+
+    response = await listing_client["client"].post("/api/listings", json=payload)
+
+    assert response.status_code == 422
+    listing_client["mock_create"].assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_create_listing_invalid_longitude(listing_client):
+    """Longitude outside [-180, 180] should be rejected at the HTTP layer (422)."""
+    payload = {
+        "vendor_id": "vendor_1",
+        "title": "Bad Long",
+        "quantity": 1,
+        "expiry": "2099-12-31T12:00:00Z",
+        "image_url": "https://example.com/bad.jpg",
+        "latitude": 1.3,
+        "longitude": -999.0,  # invalid
+    }
+
+    response = await listing_client["client"].post("/api/listings", json=payload)
+
+    assert response.status_code == 422
+    listing_client["mock_create"].assert_not_called()
