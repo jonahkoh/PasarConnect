@@ -31,6 +31,18 @@ async def create_claim_log(listing_id: int, charity_id: int, listing_version: in
         )
 
 
+async def get_claim_log(claim_id: int):
+    """Fetch a single claim record by ID.  Returns GetClaimLogResponse (includes charity_id)."""
+    import claim_log_pb2
+    import claim_log_pb2_grpc
+
+    async with grpc.aio.insecure_channel(CLAIM_LOG_GRPC_ADDR) as channel:
+        stub = claim_log_pb2_grpc.ClaimLogServiceStub(channel)
+        return await stub.GetClaimLog(
+            claim_log_pb2.GetClaimLogRequest(claim_id=claim_id)
+        )
+
+
 async def update_claim_status(claim_id: int, new_status: int):
     # Local import keeps tests decoupled from generated stubs.
     import claim_log_pb2
