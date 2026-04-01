@@ -73,6 +73,24 @@ class VerificationServicer(verification_pb2_grpc.VerificationServiceServicer):
                 "Internal verification error",
             )
 
+    async def VerifyPublicUser(
+        self,
+        request: verification_pb2.VerifyUserRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> verification_pb2.VerifyResponse:
+        # TODO: implement public-user purchase eligibility when Payment Service is built.
+        logger.info("VerifyPublicUser called user_id=%s listing_id=%s (stub)", request.user_id, request.listing_id)
+        return verification_pb2.VerifyResponse(approved=True, rejection_reason="")
+
+    async def CheckVendorCompliance(
+        self,
+        request: verification_pb2.VendorComplianceRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> verification_pb2.VerifyResponse:
+        # TODO: implement NEA/food-safety compliance check when Listing Service is built.
+        logger.info("CheckVendorCompliance called vendor_id=%s (stub)", request.vendor_id)
+        return verification_pb2.VerifyResponse(approved=True, rejection_reason="")
+
 
 # ── Server factory ────────────────────────────────────────────────────────────
 
