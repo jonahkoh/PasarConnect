@@ -145,24 +145,34 @@ services:
       verification-service:
         condition: service_started
 
+  outsystems-service:
+    build:
+      context: ./backend
+      dockerfile: outsystems/Dockerfile
+    ports:
+      - "8007:8007"   # HTTP — charity/vendor/public user login → OutSystems → JWT
+    environment:
+      OUTSYSTEMS_API_URL:         ${OUTSYSTEMS_API_URL}
+      OUTSYSTEMS_API_KEY:         ${OUTSYSTEMS_API_KEY}
+      OUTSYSTEMS_TIMEOUT_SECONDS: ${OUTSYSTEMS_TIMEOUT_SECONDS}
+      MOCK_OUTSYSTEMS:            ${MOCK_OUTSYSTEMS}
+      MOCK_OUTSYSTEMS_APPROVED:   ${MOCK_OUTSYSTEMS_APPROVED}
+
   verification-service:
     build:
       context: ./backend
       dockerfile: verification_service/Dockerfile
     ports:
-      - "8007:8007"   # HTTP (health + login endpoints)
-      - "50052:50052" # gRPC
+      - "8009:8009"   # HTTP — /health only
+      - "50052:50052" # gRPC — VerifyCharity, VerifyPublicUser, RecordNoShow
     environment:
-      VERIFICATION_GRPC_PORT:     ${VERIFICATION_GRPC_PORT}
-      DATABASE_URL:               postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${VERIFICATION_DB_HOST}:${VERIFICATION_DB_PORT}/${VERIFICATION_DB_NAME}
-      MAX_DAILY_CLAIMS:           ${MAX_DAILY_CLAIMS}
-      MAX_DAILY_PURCHASES:        ${MAX_DAILY_PURCHASES}
-      OUTSYSTEMS_API_URL:         ${OUTSYSTEMS_API_URL}
-      OUTSYSTEMS_API_KEY:         ${OUTSYSTEMS_API_KEY}
-      OUTSYSTEMS_TIMEOUT_SECONDS: ${OUTSYSTEMS_TIMEOUT_SECONDS}
-      PUBLIC_KEY_PATH:            ${PUBLIC_KEY_PATH}
-      MOCK_OUTSYSTEMS:            ${MOCK_OUTSYSTEMS}
-      MOCK_OUTSYSTEMS_APPROVED:   ${MOCK_OUTSYSTEMS_APPROVED}
+      VERIFICATION_GRPC_PORT:  ${VERIFICATION_GRPC_PORT}
+      DATABASE_URL:            postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${VERIFICATION_DB_HOST}:${VERIFICATION_DB_PORT}/${VERIFICATION_DB_NAME}
+      MAX_DAILY_CLAIMS:        ${MAX_DAILY_CLAIMS}
+      MAX_DAILY_PURCHASES:     ${MAX_DAILY_PURCHASES}
+      MAX_NOSHOWS:             ${MAX_NOSHOWS}
+      NOSHOWS_WINDOW_DAYS:     ${NOSHOWS_WINDOW_DAYS}
+      PUBLIC_KEY_PATH:         ${PUBLIC_KEY_PATH}
     volumes:
       - ./keys:/app/keys:ro
     depends_on:

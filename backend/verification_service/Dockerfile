@@ -20,7 +20,7 @@ RUN python -m grpc_tools.protoc \
   --grpc_python_out=. \
   ./proto/verification.proto
 
-EXPOSE 8007
+EXPOSE 8009
 EXPOSE 50052
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8007"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8009"]
