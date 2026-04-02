@@ -1,16 +1,12 @@
 """
 Verification Service — async gRPC Servicer.
 
-Implements all three RPCs defined in verification.proto.
+Business rules enforced (pure DB — no OutSystems calls):
+  VerifyCharity    — daily claim quota (anti-hoarding) + rolling no-show pattern check
+  VerifyPublicUser — daily purchase quota (anti-scalping)
+  RecordNoShow     — insert a no-show record when a charity fails to collect
 
-Each RPC follows the same three-step pattern:
-  1. Call OutSystems REST (via outsystems_client) to check legal status.
-  2. Query the local PostgreSQL quota table to enforce daily limits.
-  3. If eligible, INSERT a quota row and return approved=True.
-
-Error mapping:
-  OutSystemsVerificationError → gRPC UNAVAILABLE (503 equivalent)
-  Any unexpected exception     → gRPC INTERNAL   (500 equivalent)
+OutSystems is the auth platform (login / JWT). This service never calls it.
 """
 from __future__ import annotations
 
@@ -22,27 +18,24 @@ from sqlalchemy import func, select
 
 import verification_pb2
 import verification_pb2_grpc
-from database import AsyncSessionLocal, CharityClaim, PublicUserPurchase, today_start
-from outsystems_client import (
-    OutSystemsVerificationError,
-    check_charity_eligibility,
-    check_user_eligibility,
-    check_vendor_compliance,
+from database import (
+    AsyncSessionLocal,
+    CharityClaim,
+    CharityNoShow,
+    PublicUserPurchase,
+    noshows_window_start,
+    today_start,
 )
 
 logger = logging.getLogger(__name__)
 
-MAX_DAILY_CLAIMS    = int(os.getenv("MAX_DAILY_CLAIMS",    "5"))  # charity hoarding limit
-MAX_DAILY_PURCHASES = int(os.getenv("MAX_DAILY_PURCHASES", "3"))  # public anti-scalping limit
+MAX_DAILY_CLAIMS    = int(os.getenv("MAX_DAILY_CLAIMS",    "5"))   # anti-hoarding limit per charity
+MAX_DAILY_PURCHASES = int(os.getenv("MAX_DAILY_PURCHASES", "3"))   # anti-scalping limit per user
+MAX_NOSHOWS         = int(os.getenv("MAX_NOSHOWS",         "3"))   # no-shows before temporary ban
+NOSHOWS_WINDOW_DAYS = int(os.getenv("NOSHOWS_WINDOW_DAYS", "30"))  # rolling window in days
 
 
 class VerificationServicer(verification_pb2_grpc.VerificationServiceServicer):
-    """
-    Implements VerificationService from verification.proto.
-
-    Server is started by main.py inside the FastAPI lifespan so it shares
-    the same asyncio event loop.
-    """
 
     # ── 1. Charity claim verification ─────────────────────────────────────────
 
@@ -55,49 +48,59 @@ class VerificationServicer(verification_pb2_grpc.VerificationServiceServicer):
         listing_id = request.listing_id
         logger.info("VerifyCharity: charity_id=%s listing_id=%s", charity_id, listing_id)
 
-        # Step 1 — OutSystems legal check (registration + indemnity waiver)
         try:
-            approved, reason = await check_charity_eligibility(charity_id, listing_id)
-        except OutSystemsVerificationError as exc:
-            logger.error("OutSystems unavailable for charity_id=%s: %s", charity_id, exc)
-            await context.abort(
-                grpc.StatusCode.UNAVAILABLE,
-                f"Verification service unavailable: {exc}",
-            )
-            return verification_pb2.VerifyResponse()
+            async with AsyncSessionLocal() as db:
+                # Check 1 — daily hoarding quota
+                quota_result = await db.execute(
+                    select(func.count(CharityClaim.id)).where(
+                        CharityClaim.charity_id == charity_id,
+                        CharityClaim.created_at >= today_start(),
+                    )
+                )
+                claimed_today = quota_result.scalar()
+
+            if claimed_today >= MAX_DAILY_CLAIMS:
+                logger.warning(
+                    "Charity %s quota exceeded (%s/%s today)",
+                    charity_id, claimed_today, MAX_DAILY_CLAIMS,
+                )
+                return verification_pb2.VerifyResponse(
+                    approved=False, rejection_reason="QUOTA_EXCEEDED"
+                )
+
+            async with AsyncSessionLocal() as db:
+                # Check 2 — no-show pattern (rolling window)
+                noshow_result = await db.execute(
+                    select(func.count(CharityNoShow.id)).where(
+                        CharityNoShow.charity_id == charity_id,
+                        CharityNoShow.created_at >= noshows_window_start(NOSHOWS_WINDOW_DAYS),
+                    )
+                )
+                recent_noshows = noshow_result.scalar()
+
+            if recent_noshows >= MAX_NOSHOWS:
+                logger.warning(
+                    "Charity %s has %s no-shows in last %s days — rejected",
+                    charity_id, recent_noshows, NOSHOWS_WINDOW_DAYS,
+                )
+                return verification_pb2.VerifyResponse(
+                    approved=False, rejection_reason="TOO_MANY_NOSHOWS"
+                )
+
+            # Both checks passed — record the claim and approve
+            async with AsyncSessionLocal() as db:
+                db.add(CharityClaim(charity_id=charity_id, listing_id=listing_id))
+                await db.commit()
+
         except Exception as exc:
             logger.exception("Unexpected error in VerifyCharity charity_id=%s: %s", charity_id, exc)
             await context.abort(grpc.StatusCode.INTERNAL, "Internal verification error")
             return verification_pb2.VerifyResponse()
 
-        if not approved:
-            logger.warning("Charity %s rejected by OutSystems: %s", charity_id, reason)
-            return verification_pb2.VerifyResponse(approved=False, rejection_reason=reason)
-
-        # Step 2 — Daily hoarding-quota check
-        async with AsyncSessionLocal() as db:
-            result = await db.execute(
-                select(func.count(CharityClaim.id)).where(
-                    CharityClaim.charity_id == charity_id,
-                    CharityClaim.created_at >= today_start(),
-                )
-            )
-            count = result.scalar()
-
-        if count >= MAX_DAILY_CLAIMS:
-            logger.warning(
-                "Charity %s exceeded daily quota (%s/%s)", charity_id, count, MAX_DAILY_CLAIMS
-            )
-            return verification_pb2.VerifyResponse(
-                approved=False, rejection_reason="QUOTA_EXCEEDED"
-            )
-
-        # Step 3 — Record the approved claim and return success
-        async with AsyncSessionLocal() as db:
-            db.add(CharityClaim(charity_id=charity_id, listing_id=listing_id))
-            await db.commit()
-
-        logger.info("Charity %s approved (%s/%s today)", charity_id, count + 1, MAX_DAILY_CLAIMS)
+        logger.info(
+            "Charity %s approved (%s/%s today, %s no-shows in last %s days)",
+            charity_id, claimed_today + 1, MAX_DAILY_CLAIMS, recent_noshows, NOSHOWS_WINDOW_DAYS,
+        )
         return verification_pb2.VerifyResponse(approved=True, rejection_reason="")
 
     # ── 2. Public user purchase verification ──────────────────────────────────
@@ -111,86 +114,68 @@ class VerificationServicer(verification_pb2_grpc.VerificationServiceServicer):
         listing_id = request.listing_id
         logger.info("VerifyPublicUser: user_id=%s listing_id=%s", user_id, listing_id)
 
-        # Step 1 — OutSystems consumer indemnity check
         try:
-            approved, reason = await check_user_eligibility(user_id, listing_id)
-        except OutSystemsVerificationError as exc:
-            logger.error("OutSystems unavailable for user_id=%s: %s", user_id, exc)
-            await context.abort(
-                grpc.StatusCode.UNAVAILABLE,
-                f"Verification service unavailable: {exc}",
-            )
-            return verification_pb2.VerifyResponse()
+            async with AsyncSessionLocal() as db:
+                result = await db.execute(
+                    select(func.count(PublicUserPurchase.id)).where(
+                        PublicUserPurchase.user_id == user_id,
+                        PublicUserPurchase.created_at >= today_start(),
+                    )
+                )
+                purchases_today = result.scalar()
+
+            if purchases_today >= MAX_DAILY_PURCHASES:
+                logger.warning(
+                    "User %s purchase quota exceeded (%s/%s today)",
+                    user_id, purchases_today, MAX_DAILY_PURCHASES,
+                )
+                return verification_pb2.VerifyResponse(
+                    approved=False, rejection_reason="PURCHASE_QUOTA_EXCEEDED"
+                )
+
+            async with AsyncSessionLocal() as db:
+                db.add(PublicUserPurchase(user_id=user_id, listing_id=listing_id))
+                await db.commit()
+
         except Exception as exc:
             logger.exception("Unexpected error in VerifyPublicUser user_id=%s: %s", user_id, exc)
             await context.abort(grpc.StatusCode.INTERNAL, "Internal verification error")
             return verification_pb2.VerifyResponse()
 
-        if not approved:
-            logger.warning("User %s rejected by OutSystems: %s", user_id, reason)
-            return verification_pb2.VerifyResponse(approved=False, rejection_reason=reason)
-
-        # Step 2 — Daily anti-scalping quota check
-        async with AsyncSessionLocal() as db:
-            result = await db.execute(
-                select(func.count(PublicUserPurchase.id)).where(
-                    PublicUserPurchase.user_id == user_id,
-                    PublicUserPurchase.created_at >= today_start(),
-                )
-            )
-            count = result.scalar()
-
-        if count >= MAX_DAILY_PURCHASES:
-            logger.warning(
-                "User %s exceeded daily purchase quota (%s/%s)", user_id, count, MAX_DAILY_PURCHASES
-            )
-            return verification_pb2.VerifyResponse(
-                approved=False, rejection_reason="PURCHASE_QUOTA_EXCEEDED"
-            )
-
-        # Step 3 — Record the approved purchase and return success
-        async with AsyncSessionLocal() as db:
-            db.add(PublicUserPurchase(user_id=user_id, listing_id=listing_id))
-            await db.commit()
-
-        logger.info(
-            "User %s approved (%s/%s purchases today)", user_id, count + 1, MAX_DAILY_PURCHASES
-        )
+        logger.info("User %s approved (%s/%s purchases today)", user_id, purchases_today + 1, MAX_DAILY_PURCHASES)
         return verification_pb2.VerifyResponse(approved=True, rejection_reason="")
 
-    # ── 3. Vendor NEA compliance check ────────────────────────────────────────
+    # ── 3. Record a charity no-show ───────────────────────────────────────────
 
-    async def CheckVendorCompliance(
+    async def RecordNoShow(
         self,
-        request: verification_pb2.VendorComplianceRequest,
+        request: verification_pb2.RecordNoShowRequest,
         context: grpc.aio.ServicerContext,
-    ) -> verification_pb2.VerifyResponse:
-        vendor_id = request.vendor_id
-        logger.info("CheckVendorCompliance: vendor_id=%s", vendor_id)
+    ) -> verification_pb2.RecordNoShowResponse:
+        charity_id = request.charity_id
+        claim_id   = request.claim_id
+        logger.info("RecordNoShow: charity_id=%s claim_id=%s", charity_id, claim_id)
 
-        # No local quota table — just delegate to OutSystems license check
         try:
-            approved, reason = await check_vendor_compliance(vendor_id)
-        except OutSystemsVerificationError as exc:
-            logger.error("OutSystems unavailable for vendor_id=%s: %s", vendor_id, exc)
-            await context.abort(
-                grpc.StatusCode.UNAVAILABLE,
-                f"Verification service unavailable: {exc}",
-            )
-            return verification_pb2.VerifyResponse()
+            async with AsyncSessionLocal() as db:
+                db.add(CharityNoShow(charity_id=charity_id, claim_id=claim_id))
+                await db.commit()
+
+            async with AsyncSessionLocal() as db:
+                result = await db.execute(
+                    select(func.count(CharityNoShow.id)).where(
+                        CharityNoShow.charity_id == charity_id,
+                    )
+                )
+                total = result.scalar()
+
         except Exception as exc:
-            logger.exception(
-                "Unexpected error in CheckVendorCompliance vendor_id=%s: %s", vendor_id, exc
-            )
+            logger.exception("Unexpected error in RecordNoShow charity_id=%s: %s", charity_id, exc)
             await context.abort(grpc.StatusCode.INTERNAL, "Internal verification error")
-            return verification_pb2.VerifyResponse()
+            return verification_pb2.RecordNoShowResponse()
 
-        if not approved:
-            logger.warning("Vendor %s not compliant: %s", vendor_id, reason)
-            return verification_pb2.VerifyResponse(approved=False, rejection_reason=reason)
-
-        logger.info("Vendor %s compliance OK", vendor_id)
-        return verification_pb2.VerifyResponse(approved=True, rejection_reason="")
+        logger.info("No-show recorded for charity %s (lifetime total: %s)", charity_id, total)
+        return verification_pb2.RecordNoShowResponse(recorded=True, total_noshows=total)
 
 
 # ── Server factory ────────────────────────────────────────────────────────────
