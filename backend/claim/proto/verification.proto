@@ -4,36 +4,43 @@ package verification;
 
 // ── Request messages ─────────────────────────────────────────────────────────
 
-// Charity eligibility — used by Claim Service
+// Charity quota + no-show check — Claim Service calls before locking inventory
 message VerifyRequest {
   int32 charity_id  = 1;
   int32 listing_id  = 2;
 }
 
-// Public user purchase check — used by Payment Service (future)
+// Public user anti-scalping check — Payment Service (future)
 message VerifyUserRequest {
   int32 user_id    = 1;
   int32 listing_id = 2;
 }
 
-// Vendor NEA/food-safety compliance — used by Listing Service (future)
-message VendorComplianceRequest {
-  int32 vendor_id = 1;
+// Record a charity no-show — written when a charity fails to collect their claim
+message RecordNoShowRequest {
+  int32 charity_id = 1;
+  int32 claim_id   = 2;
 }
 
-// ── Response ─────────────────────────────────────────────────────────────────
-// Shared response for all three RPCs.
+// ── Responses ────────────────────────────────────────────────────────────────
+
 message VerifyResponse {
-  bool   approved          = 1;  // true = eligible, false = rejected
-  string rejection_reason  = 2;  // e.g. "MISSING_WAIVER" — empty string if approved
+  bool   approved         = 1;  // true = eligible to proceed
+  string rejection_reason = 2;  // "QUOTA_EXCEEDED" | "TOO_MANY_NOSHOWS" | "PURCHASE_QUOTA_EXCEEDED" | ""
 }
 
-// ── Service ───────────────────────────────────────────────────────────────────
+message RecordNoShowResponse {
+  bool  recorded      = 1;  // always true on success
+  int32 total_noshows = 2;  // lifetime no-show count for this charity
+}
+
+// ── Service ──────────────────────────────────────────────────────────────────
+// OutSystems handles auth (login / JWT). This service handles business rules only.
 service VerificationService {
-  // Called synchronously by Claim Service before locking inventory.
-  rpc VerifyCharity         (VerifyRequest)           returns (VerifyResponse);
-  // Called by Payment Service before processing a public marketplace purchase.
-  rpc VerifyPublicUser      (VerifyUserRequest)        returns (VerifyResponse);
-  // Called by Listing Service to confirm vendor is NEA/food-safety compliant.
-  rpc CheckVendorCompliance (VendorComplianceRequest)  returns (VerifyResponse);
+  // daily quota (anti-hoarding) + no-show history check
+  rpc VerifyCharity    (VerifyRequest)       returns (VerifyResponse);
+  // daily purchase quota check (anti-scalping)
+  rpc VerifyPublicUser (VerifyUserRequest)   returns (VerifyResponse);
+  // record a charity no-show for future VerifyCharity checks
+  rpc RecordNoShow     (RecordNoShowRequest) returns (RecordNoShowResponse);
 }
