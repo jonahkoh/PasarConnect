@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import LandingFooter from "../components/LandingFooter";
 import TopNav from "../components/TopNav";
 
 const roleCards = [
@@ -173,21 +174,7 @@ export default function LandingPage() {
           </div>
         </section>
 
-        <footer className="landing-footer">
-          <div className="landing-footer__brand">
-            <p>PasarConnect</p>
-            <span>
-              A practical surplus-food redistribution platform for vendors,
-              charities, and public users.
-            </span>
-          </div>
-          <div className="landing-footer__links">
-            <a href="/#home">Home</a>
-            <a href="/#how-it-works">How It Works</a>
-            <a href="/#impact">Impact</a>
-            <Link to="/login">Login</Link>
-          </div>
-        </footer>
+        <LandingFooter />
       </main>
     </div>
   );

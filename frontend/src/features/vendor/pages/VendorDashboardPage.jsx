@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import TopNav from "../../../components/TopNav";
 import VendorDashboardSummary from "../components/VendorDashboardSummary";
 import VendorListingCard from "../components/VendorListingCard";
@@ -44,6 +45,10 @@ export default function VendorDashboardPage() {
                       records.
                     </p>
                   </div>
+
+                  <Link to="/vendor/create-listing" className="vendor-inline-link">
+                    Create Listing
+                  </Link>
                 </div>
 
                 {listings.length === 0 ? (

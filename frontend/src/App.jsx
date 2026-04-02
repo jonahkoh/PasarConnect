@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { mockListings } from "./data/mockListings";
 import { mockPublicListings } from "./data/mockPublicListings";
+import VendorCreateListingPage from "./features/vendor/pages/VendorCreateListingPage";
 import VendorDashboardPage from "./features/vendor/pages/VendorDashboardPage";
 import CharityClaimPage from "./pages/CharityClaimPage";
 import CharityClaimDetailPage from "./pages/CharityClaimDetailPage";
@@ -222,6 +223,7 @@ export default function App() {
           }
         />
         <Route path="/vendor" element={<VendorDashboardPage />} />
+        <Route path="/vendor/create-listing" element={<VendorCreateListingPage />} />
       </Routes>
     </BrowserRouter>
   );
