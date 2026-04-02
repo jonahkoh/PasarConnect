@@ -2,19 +2,14 @@ from __future__ import annotations
 
 import logging
 import os
-from contextlib import asynccontextmanager
 
 import httpx
 import jwt as pyjwt
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
-from grpc_server import start_grpc_server
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-GRPC_PORT = int(os.getenv("VERIFICATION_GRPC_PORT", "50052"))
 
 # OutSystems login endpoint — returns a signed JWT on successful charity login
 OUTSYSTEMS_API_URL = os.getenv("OUTSYSTEMS_API_URL", "")
@@ -22,46 +17,24 @@ OUTSYSTEMS_API_KEY = os.getenv("OUTSYSTEMS_API_KEY", "")
 _TIMEOUT_SECONDS = float(os.getenv("OUTSYSTEMS_TIMEOUT_SECONDS", "5.0"))
 MOCK_OUTSYSTEMS = os.getenv("MOCK_OUTSYSTEMS", "false").lower() == "true"
 
-# ── Request / Response schemas ─────────────────────────────────────────────────
+# ── Schemas ───────────────────────────────────────────────────────────────────
 
 class CharityLoginRequest(BaseModel):
-    """Credentials the charity submits to log in."""
     email: str
     password: str
 
 
 class CharityLoginResponse(BaseModel):
-    """Returned to the client after a successful OutSystems login."""
-    access_token: str   # RS256 JWT signed by OutSystems — pass as Authorization: Bearer <token>
+    access_token: str   # RS256 JWT signed by OutSystems
     token_type: str = "bearer"
-    charity_id: int     # decoded from the JWT 'sub' claim for convenience
-
-
-
-# ── Lifespan ──────────────────────────────────────────────────────────────────
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """
-    Starts the gRPC server on the same event loop as FastAPI.
-    Mirrors the pattern used in inventory/inventory.py.
-    """
-    logger.info("Starting Verification gRPC server on port %s", GRPC_PORT)
-    grpc_server = await start_grpc_server(port=GRPC_PORT)
-
-    yield
-
-    # ── Shutdown ──────────────────────────────────────────────────────────────
-    logger.info("Stopping Verification gRPC server...")
-    await grpc_server.stop(grace=5)
+    charity_id: int     # decoded from JWT 'sub' for client convenience
 
 
 # ── App ───────────────────────────────────────────────────────────────────────
 
 app = FastAPI(
-    title="PasarConnect — Verification Service",
-    description="Stateless gatekeeper. Proxies charity eligibility checks to OutSystems.",
-    lifespan=lifespan,
+    title="PasarConnect — OutSystems Auth Wrapper",
+    description="HTTP wrapper for OutSystems auth. Issues JWTs for charity, vendor, and public users.",
 )
 
 
@@ -69,7 +42,7 @@ app = FastAPI(
 
 @app.get("/health")
 async def health():
-    return {"status": "healthy", "service": "verification"}
+    return {"status": "healthy", "service": "outsystems"}
 
 
 @app.post("/auth/charity/login", response_model=CharityLoginResponse)
