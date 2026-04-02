@@ -1,8 +1,15 @@
+import { Link } from "react-router-dom";
+
 export default function TopNav() {
   return (
     <header className="topbar">
       <a href="/#home" className="brand">
-        PasarConnect
+        <img
+          src="/pasarconnect-logo.svg"
+          alt="PasarConnect"
+          className="brand__logo"
+        />
+        <span className="brand__text">PasarConnect</span>
       </a>
 
       <nav className="topbar__nav" aria-label="Primary navigation">
@@ -18,9 +25,9 @@ export default function TopNav() {
       </nav>
 
       <div className="topbar__actions">
-        <a href="/login" className="topbar__link">
+        <Link to="/login" className="topbar__login">
           Login
-        </a>
+        </Link>
       </div>
     </header>
   );

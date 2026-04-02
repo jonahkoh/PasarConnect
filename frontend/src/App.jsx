@@ -6,6 +6,7 @@ import VendorDashboardPage from "./features/vendor/pages/VendorDashboardPage";
 import CharityClaimPage from "./pages/CharityClaimPage";
 import CharityClaimDetailPage from "./pages/CharityClaimDetailPage";
 import LandingPage from "./pages/LandingPage";
+import LoginPage from "./pages/LoginPage";
 import MarketplaceCartPage from "./pages/MarketplaceCartPage";
 import PublicMarketplaceDetailPage from "./pages/PublicMarketplaceDetailPage";
 import PublicMarketplacePage from "./pages/PublicMarketplacePage";
@@ -160,6 +161,7 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<LandingPage />} />
+        <Route path="/login" element={<LoginPage />} />
         <Route
           path="/charity"
           element={
