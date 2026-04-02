@@ -1,6 +1,8 @@
 export default function FoodCard({
   item,
   onAction,
+  onPreview,
+  onOpenDetail,
   isProcessing,
   isDisabled = false,
   actionLabel = "Claim",
@@ -8,7 +10,18 @@ export default function FoodCard({
   cardClassName = "",
 }) {
   return (
-    <article className={`food-card ${cardClassName}`.trim()}>
+    <article
+      className={`food-card ${cardClassName} ${onOpenDetail ? "food-card--interactive" : ""}`.trim()}
+      onClick={() => onOpenDetail?.(item)}
+      onKeyDown={(event) => {
+        if ((event.key === "Enter" || event.key === " ") && onOpenDetail) {
+          event.preventDefault();
+          onOpenDetail(item);
+        }
+      }}
+      role={onOpenDetail ? "button" : undefined}
+      tabIndex={onOpenDetail ? 0 : undefined}
+    >
       <div className="food-card__media">
         <img
           className="food-card__image"
@@ -46,11 +59,28 @@ export default function FoodCard({
           <div className="food-card__actions">
             <strong className="food-card__price">{item.priceLabel}</strong>
             {helperText && <span className="food-card__helper">{helperText}</span>}
+            {onPreview && (
+              <div className="food-card__links">
+                <button
+                  type="button"
+                  className="food-card__ghost-link"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onPreview(item);
+                  }}
+                >
+                  See location
+                </button>
+              </div>
+            )}
           </div>
 
           <button
             className="claim-btn"
-            onClick={() => onAction(item)}
+            onClick={(event) => {
+              event.stopPropagation();
+              onAction(item);
+            }}
             disabled={isProcessing || isDisabled || item.status !== "AVAILABLE"}
           >
             {isProcessing ? `${actionLabel}ing...` : actionLabel}

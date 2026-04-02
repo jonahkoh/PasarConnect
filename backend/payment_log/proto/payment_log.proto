@@ -1,0 +1,63 @@
+syntax = "proto3";
+
+package paymentlog;
+
+service PaymentLogService {
+  rpc CreatePaymentLog (CreatePaymentLogRequest) returns (CreatePaymentLogResponse);
+  rpc GetPaymentLog (GetPaymentLogRequest) returns (GetPaymentLogResponse);
+  rpc UpdatePaymentStatus (UpdatePaymentStatusRequest) returns (UpdatePaymentStatusResponse);
+}
+
+enum PaymentStatus {
+  PAYMENT_STATUS_UNSPECIFIED = 0;
+  PENDING = 1;
+  SUCCESS = 2;
+  COLLECTED = 3;
+  REFUNDED = 4;
+  FAILED = 5;
+}
+
+message CreatePaymentLogRequest {
+  string transaction_id = 1;
+  int32 listing_id = 2;
+  int32 listing_version = 3;
+  double amount = 4;
+}
+
+message CreatePaymentLogResponse {
+  bool success = 1;
+  string transaction_id = 2;
+  PaymentStatus status = 3;
+  int32 listing_id = 4;
+  int32 listing_version = 5;
+  double amount = 6;
+}
+
+message GetPaymentLogRequest {
+  string transaction_id = 1;
+}
+
+message GetPaymentLogResponse {
+  bool found = 1;
+  string transaction_id = 2;
+  PaymentStatus status = 3;
+  int32 listing_id = 4;
+  int32 listing_version = 5;
+  double amount = 6;
+}
+
+message UpdatePaymentStatusRequest {
+  string transaction_id = 1;
+  PaymentStatus new_status = 2;
+  int32 listing_version = 3;
+  bool use_listing_version = 4;
+}
+
+message UpdatePaymentStatusResponse {
+  bool success = 1;
+  string transaction_id = 2;
+  PaymentStatus status = 3;
+  int32 listing_id = 4;
+  int32 listing_version = 5;
+  double amount = 6;
+}

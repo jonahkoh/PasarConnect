@@ -9,6 +9,7 @@ export default function CartSummary({
   items,
   totalItems,
   subtotal,
+  onUpdateQuantity,
   onCheckout,
   isCheckingOut,
   footer = null,
@@ -29,13 +30,34 @@ export default function CartSummary({
         <div className="cart-summary__list">
           {items.map((entry) => (
             <article key={entry.id} className="cart-line">
-              <div>
+              <div className="cart-line__copy">
                 <h3>{entry.name}</h3>
                 <p>{entry.vendor}</p>
               </div>
 
               <div className="cart-line__meta">
-                <span>Qty {entry.quantity}</span>
+                {onUpdateQuantity ? (
+                  <div className="quantity-stepper cart-line__stepper">
+                    <button
+                      type="button"
+                      onClick={() => onUpdateQuantity(entry.id, entry.quantity - 1)}
+                      aria-label={`Decrease ${entry.name} quantity`}
+                    >
+                      -
+                    </button>
+                    <span>{entry.quantity}</span>
+                    <button
+                      type="button"
+                      onClick={() => onUpdateQuantity(entry.id, entry.quantity + 1)}
+                      disabled={entry.quantity >= entry.maxQuantity}
+                      aria-label={`Increase ${entry.name} quantity`}
+                    >
+                      +
+                    </button>
+                  </div>
+                ) : (
+                  <span>Qty {entry.quantity}</span>
+                )}
                 <strong>{formatCurrency(entry.lineTotal)}</strong>
               </div>
             </article>

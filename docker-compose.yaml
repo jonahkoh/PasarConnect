@@ -1,0 +1,199 @@
+services:
+
+  # ── Databases ──────────────────────────────────────────────────────────────
+
+  inventory-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER:     postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB:       inventory_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - inventory-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d inventory_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  claim-log-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER:     postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB:       claim_db
+    ports:
+      - "5434:5432"
+    volumes:
+      - claim-log-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d claim_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  payment-log-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER:     postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB:       payment_db
+    ports:
+      - "5435:5432"
+    volumes:
+      - payment-log-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d payment_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ── Message Broker ─────────────────────────────────────────────────────────
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    ports:
+      - "5672:5672"    # AMQP
+      - "15672:15672"  # Management UI  →  http://localhost:15672  (guest/guest)
+
+  # ── Services ───────────────────────────────────────────────────────────────
+
+  inventory-service:
+    build:
+      context: ./backend
+      dockerfile: inventory/Dockerfile
+    ports:
+      - "8001:8001"   # HTTP
+      - "50051:50051" # gRPC
+    environment:
+      USE_SQLITE: "false"
+      DB_HOST:     inventory-db
+      DB_PORT:     5432
+      DB_USER:     postgres
+      DB_PASSWORD: postgres
+      DB_NAME:     inventory_db
+    depends_on:
+      inventory-db:
+        condition: service_healthy
+
+  claim-service:
+    build:
+      context: ./backend
+      dockerfile: claim/Dockerfile
+    ports:
+      - "8002:8002"
+    environment:
+      INVENTORY_GRPC_HOST:  inventory-service
+      INVENTORY_GRPC_PORT:  50051
+      CLAIM_LOG_URL:        http://claim-log-service:8006
+      CLAIM_LOG_GRPC_HOST:  claim-log-service
+      CLAIM_LOG_GRPC_PORT:  50061
+      RABBITMQ_HOST:        rabbitmq
+      VERIFICATION_GRPC_HOST:   verification-service   
+      VERIFICATION_GRPC_PORT:   50052                  
+      PUBLIC_KEY_PATH:          /app/keys/public.pem   
+    volumes:                                           
+      - ./keys:/app/keys:ro                            
+    depends_on:
+      rabbitmq:
+        condition: service_started
+      inventory-service:
+        condition: service_started
+      claim-log-service:
+        condition: service_started
+      verification-service:
+        condition: service_started 
+  
+  verification-service:
+    build:
+      context: ./backend
+      dockerfile: outsystems/Dockerfile
+    ports:
+      - "8007:8007"   # HTTP (health endpoint)
+      - "50052:50052" # gRPC
+    environment:
+      VERIFICATION_GRPC_PORT:  50052
+      OUTSYSTEMS_API_URL:      ${OUTSYSTEMS_API_URL}
+      OUTSYSTEMS_API_KEY:      ${OUTSYSTEMS_API_KEY}
+      OUTSYSTEMS_TIMEOUT_SECONDS: 5.0
+      PUBLIC_KEY_PATH:         /app/keys/public.pem
+      MOCK_OUTSYSTEMS:            ${MOCK_OUTSYSTEMS:-false}
+      MOCK_OUTSYSTEMS_APPROVED:   ${MOCK_OUTSYSTEMS_APPROVED:-true}
+    volumes:
+      - ./keys:/app/keys:ro
+
+  claim-log-service:
+    build:
+      context: ./backend
+      dockerfile: claim_log/Dockerfile
+    ports:
+      - "8006:8006"
+    expose:
+      - "50061"
+    environment:
+      DB_HOST:     claim-log-db
+      DB_PORT:     5432
+      DB_USER:     postgres
+      DB_PASSWORD: postgres
+      DB_NAME:     claim_db
+    depends_on:
+      claim-log-db:
+        condition: service_healthy
+
+  payment-service:
+    build:
+      context: ./backend
+      dockerfile: payment/Dockerfile
+    ports:
+      - "8003:8003"
+    environment:
+      # Payment Orchestrator is stateless — no DB of its own.
+      # All state lives in payment-log-service.
+      INVENTORY_GRPC_HOST:  inventory-service
+      INVENTORY_GRPC_PORT:  50051
+      RABBITMQ_HOST:        rabbitmq
+      STRIPE_WRAPPER_URL:   http://stripe-wrapper:8004
+      PAYMENT_LOG_GRPC_HOST: payment-log-service
+      PAYMENT_LOG_GRPC_PORT: 50062
+    depends_on:
+      rabbitmq:
+        condition: service_started
+      inventory-service:
+        condition: service_started
+      stripe-wrapper:
+        condition: service_started
+      payment-log-service:
+        condition: service_started
+
+  stripe-wrapper:
+    build:
+      context: ./backend
+      dockerfile: stripe_wrapper/Dockerfile
+    ports:
+      - "8004:8004"
+    # Fully stateless — no DB, no message broker.
+
+  payment-log-service:
+    build:
+      context: ./backend
+      dockerfile: payment_log/Dockerfile
+    ports:
+      - "8005:8005"
+    expose:
+      - "50062"
+    environment:
+      DB_HOST:     payment-log-db
+      DB_PORT:     5432
+      DB_USER:     postgres
+      DB_PASSWORD: postgres
+      DB_NAME:     payment_db
+    depends_on:
+      payment-log-db:
+        condition: service_healthy
+
+volumes:
+  inventory-db-data:
+  claim-log-db-data:
+  payment-log-db-data:

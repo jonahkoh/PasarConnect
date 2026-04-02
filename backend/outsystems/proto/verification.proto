@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+package verification;
+
+// ── Request ──────────────────────────────────────────────────────────────────
+// Sent by the Claim Service to ask: "is this charity eligible to claim?"
+
+message VerifyRequest {
+  int32 charity_id  = 1;  // The charity attempting the claim
+  int32 listing_id  = 2;  // The food listing being claimed
+}
+
+// ── Response ─────────────────────────────────────────────────────────────────
+// Returned by the Verification Service after checking OutSystems.
+
+message VerifyResponse {
+  bool   approved          = 1;  // true = eligible, false = rejected
+  string rejection_reason  = 2;  // e.g. "MISSING_WAIVER" — empty string if approved
+}
+
+// ── Service ───────────────────────────────────────────────────────────────────
+// One RPC. Claim calls it synchronously before locking inventory.
+
+service VerificationService {
+  rpc VerifyCharity (VerifyRequest) returns (VerifyResponse);
+}
