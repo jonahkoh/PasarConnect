@@ -21,6 +21,8 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 VERIFICATION_GRPC_HOST = os.getenv("VERIFICATION_GRPC_HOST", "localhost")
+
+
 VERIFICATION_GRPC_PORT = os.getenv("VERIFICATION_GRPC_PORT", "50052")
 VERIFICATION_GRPC_ADDR = f"{VERIFICATION_GRPC_HOST}:{VERIFICATION_GRPC_PORT}"
 
@@ -87,3 +89,27 @@ async def verify_charity(charity_id: int, listing_id: int) -> None:
         charity_id,
         listing_id,
     )
+
+
+async def verify_charity_eligibility(charity_id: int, listing_id: int) -> tuple[bool, str]:
+    """
+    Non-raising wrapper around verify_charity() used by the waitlist promotion loop.
+
+    Returns:
+        (True, "")       — charity is eligible.
+        (False, reason)  — charity is ineligible; reason is the rejection string.
+
+    Never raises — on any unexpected error returns (False, "VERIFICATION_ERROR") so
+    the promotion loop can safely skip the charity and try the next one in the queue.
+    """
+    try:
+        await verify_charity(charity_id=charity_id, listing_id=listing_id)
+        return True, ""
+    except CharityNotEligibleError as exc:
+        return False, exc.reason
+    except Exception as exc:
+        logger.error(
+            "Unexpected error checking eligibility for charity_id=%s listing_id=%s: %s",
+            charity_id, listing_id, exc,
+        )
+        return False, "VERIFICATION_ERROR"

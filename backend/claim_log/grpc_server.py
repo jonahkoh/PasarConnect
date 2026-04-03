@@ -69,6 +69,24 @@ class ClaimLogServicer(claim_log_pb2_grpc.ClaimLogServiceServicer):
                 status=_REVERSE_STATUS_MAP[record.status],
             )
 
+    async def GetClaimLog(self, request, context):
+        async with SessionLocal() as db:
+            record = await db.get(ClaimRecord, request.claim_id)
+            if record is None:
+                await context.abort(
+                    grpc.StatusCode.NOT_FOUND,
+                    f"Claim {request.claim_id} not found",
+                )
+                return claim_log_pb2.GetClaimLogResponse()
+
+            return claim_log_pb2.GetClaimLogResponse(
+                id=record.id,
+                listing_id=record.listing_id,
+                charity_id=record.charity_id,
+                listing_version=record.listing_version,
+                status=_REVERSE_STATUS_MAP[record.status],
+            )
+
     async def UpdateClaimStatus(self, request, context):
         new_status = _STATUS_MAP.get(request.new_status)
         if new_status is None:

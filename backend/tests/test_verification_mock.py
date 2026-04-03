@@ -25,7 +25,6 @@ def _reload_client(mock: bool, approved: bool):
     os.environ["MOCK_OUTSYSTEMS"] = "true" if mock else "false"
     os.environ["MOCK_OUTSYSTEMS_APPROVED"] = "true" if approved else "false"
 
-    import sys
     if "outsystems_client" in sys.modules:
         del sys.modules["outsystems_client"]
 

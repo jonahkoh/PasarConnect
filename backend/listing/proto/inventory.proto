@@ -1,0 +1,44 @@
+syntax = "proto3";
+
+package inventory;
+
+service InventoryService {
+  rpc CreateListing (CreateListingRequest) returns (CreateListingResponse);
+  rpc LockListing (LockListingRequest) returns (LockListingResponse);
+}
+
+message CreateListingRequest {
+  string vendor_id = 1;
+  string title = 2;
+  string description = 3;
+  int32 quantity = 4;
+  double weight_kg = 5;
+  string expiry = 6;
+  string image_url = 7;
+  double latitude = 8;   // 0.0 means "not provided" (sentinel, same pattern as quantity/weight_kg)
+  double longitude = 9;  // 0.0 means "not provided"
+}
+
+message CreateListingResponse {
+  bool success = 1;
+  int32 listing_id = 2;
+}
+
+enum NewStatus {
+  AVAILABLE = 0;
+  PENDING_PAYMENT = 1;
+  PENDING_COLLECTION = 2;
+  SOLD = 3;
+  SOLD_PENDING_COLLECTION = 4;
+}
+
+message LockListingRequest {
+  int32 listing_id = 1;
+  int32 expected_version = 2;
+  NewStatus new_status = 3;
+}
+
+message LockListingResponse {
+  bool success = 1;
+  int32 new_version = 2;
+}
