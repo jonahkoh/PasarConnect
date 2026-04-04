@@ -113,3 +113,70 @@ async def verify_charity_eligibility(charity_id: int, listing_id: int) -> tuple[
             charity_id, listing_id, exc,
         )
         return False, "VERIFICATION_ERROR"
+
+
+async def cancel_claim_quota(charity_id: int, listing_id: int) -> None:
+    """
+    Calls CancelClaim RPC — restores one daily quota slot for the charity.
+
+    Best-effort: logs on any failure but never raises so the claim cancellation
+    itself is not blocked by a verification service hiccup.
+    """
+    try:
+        async with grpc.aio.insecure_channel(VERIFICATION_GRPC_ADDR) as channel:
+            stub = verification_pb2_grpc.VerificationServiceStub(channel)
+            response = await stub.CancelClaim(
+                verification_pb2.CancelClaimRequest(
+                    charity_id=charity_id,
+                    listing_id=listing_id,
+                )
+            )
+            if response.cancelled:
+                logger.info(
+                    "Quota slot restored for charity_id=%s listing_id=%s",
+                    charity_id, listing_id,
+                )
+            else:
+                logger.warning(
+                    "CancelClaim returned cancelled=False for charity_id=%s listing_id=%s",
+                    charity_id, listing_id,
+                )
+    except Exception as exc:
+        logger.error(
+            "Best-effort CancelClaim failed for charity_id=%s listing_id=%s: %s",
+            charity_id, listing_id, exc,
+        )
+
+
+async def record_noshow(charity_id: int, claim_id: int) -> None:
+    """
+    Calls RecordNoShow RPC — records a charity no-show and updates standing.
+
+    Raises HTTPException(503) if verification service is unreachable (noshow
+    recording is critical — the caller should not silently swallow this).
+    """
+    from fastapi import HTTPException
+
+    async with grpc.aio.insecure_channel(VERIFICATION_GRPC_ADDR) as channel:
+        stub = verification_pb2_grpc.VerificationServiceStub(channel)
+        try:
+            await stub.RecordNoShow(
+                verification_pb2.RecordNoShowRequest(
+                    charity_id=charity_id,
+                    claim_id=claim_id,
+                )
+            )
+            logger.info(
+                "No-show recorded: charity_id=%s claim_id=%s",
+                charity_id, claim_id,
+            )
+        except grpc.aio.AioRpcError as exc:
+            if exc.code() == grpc.StatusCode.UNAVAILABLE:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Verification service unavailable — no-show not recorded",
+                )
+            raise HTTPException(
+                status_code=502,
+                detail=f"Verification error: [{exc.code()}] {exc.details()}",
+            )

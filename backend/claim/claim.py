@@ -24,7 +24,7 @@ from schemas import ClaimCreate, ClaimResponse, CancelClaimRequest
 from waitlist_db import init_db
 from waitlist_router import try_promote_next
 from shared.jwt_auth import verify_jwt_token
-from verification_client import CharityNotEligibleError, verify_charity  #need to separate verification logic into a new service!
+from verification_client import CharityNotEligibleError, cancel_claim_quota, record_noshow, verify_charity  #need to separate verification logic into a new service!
 
 load_dotenv()
 
@@ -221,6 +221,9 @@ async def cancel_claim(claim_id: int, body: CancelClaimRequest):
         claim_id, body.charity_id, listing_id, available_version,
     )
 
+    # 4b. Restore daily quota slot in Verification Service (best-effort — never blocks cancellation)
+    await cancel_claim_quota(charity_id=body.charity_id, listing_id=listing_id)
+
     # 5. Promote next from waitlist (auto-assigns listing to next eligible charity)
     promoted_charity_id, _ = await try_promote_next(
         listing_id=listing_id,
@@ -234,6 +237,67 @@ async def cancel_claim(claim_id: int, body: CancelClaimRequest):
             listing_id=listing_id,
             charity_id=body.charity_id,
         )
+
+
+@app.post("/claims/{claim_id}/noshow", status_code=200)
+async def noshow_claim(claim_id: int):
+    """
+    Called by the vendor when a charity fails to collect their claim.
+
+    Flow:
+      1. Fetch claim from Claim Log — validates it exists.
+      2. Validate: claim must be PENDING_COLLECTION or AWAITING_VENDOR_APPROVAL.
+      3. Mark claim CANCELLED in Claim Log.
+      4. Rollback Inventory → AVAILABLE.
+      5. Record no-show in Verification Service (updates charity standing/ban).
+      6. Publish claim.cancelled event.
+    """
+    import claim_log_pb2
+
+    # 1. Fetch claim record
+    try:
+        claim = await claim_log_client.get_claim_log(claim_id)
+    except grpc.aio.AioRpcError as exc:
+        raise claim_log_client.map_claim_log_grpc_error(exc)
+
+    # 2. Validate status
+    if claim.status not in (claim_log_pb2.PENDING_COLLECTION, claim_log_pb2.AWAITING_VENDOR_APPROVAL):
+        raise HTTPException(
+            status_code=409,
+            detail="No-show can only be recorded for PENDING_COLLECTION or AWAITING_VENDOR_APPROVAL claims",
+        )
+
+    # 3. Mark claim CANCELLED in Claim Log
+    try:
+        await claim_log_client.update_claim_status(claim_id, claim_log_pb2.CANCELLED)
+    except grpc.aio.AioRpcError as exc:
+        raise claim_log_client.map_claim_log_grpc_error(exc)
+
+    # 4. Rollback Inventory → AVAILABLE
+    try:
+        await inventory_client.rollback_listing_to_available(
+            claim.listing_id, claim.listing_version
+        )
+    except grpc.aio.AioRpcError:
+        logger.error("Inventory rollback failed for noshow claim_id=%s", claim_id)
+        # Don't block — no-show must still be recorded
+
+    # 5. Record no-show in Verification Service (raises 503 if unavailable)
+    await record_noshow(charity_id=claim.charity_id, claim_id=claim_id)
+
+    # 6. Publish event (best-effort)
+    await publisher.publish_claim_cancelled(
+        claim_id=claim_id,
+        listing_id=claim.listing_id,
+        charity_id=claim.charity_id,
+    )
+
+    return {
+        "status": "ok",
+        "claim_id": claim_id,
+        "charity_id": claim.charity_id,
+        "noshow_recorded": True,
+    }
 
 
 @app.post("/claims/{claim_id}/arrive")
