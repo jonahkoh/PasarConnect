@@ -207,14 +207,16 @@ services:
     ports:
       - "8003:8003"
     environment:
-      INVENTORY_GRPC_HOST:   ${INVENTORY_GRPC_HOST}
-      INVENTORY_GRPC_PORT:   ${INVENTORY_GRPC_PORT}
-      RABBITMQ_HOST:         ${RABBITMQ_HOST}
-      RABBITMQ_USER:         ${RABBITMQ_USER}
-      RABBITMQ_PASS:         ${RABBITMQ_PASS}
-      STRIPE_WRAPPER_URL:    ${STRIPE_WRAPPER_URL}
-      PAYMENT_LOG_GRPC_HOST: ${PAYMENT_LOG_GRPC_HOST}
-      PAYMENT_LOG_GRPC_PORT: ${PAYMENT_LOG_GRPC_PORT}
+      INVENTORY_GRPC_HOST:      ${INVENTORY_GRPC_HOST}
+      INVENTORY_GRPC_PORT:      ${INVENTORY_GRPC_PORT}
+      RABBITMQ_HOST:            ${RABBITMQ_HOST}
+      RABBITMQ_USER:            ${RABBITMQ_USER}
+      RABBITMQ_PASS:            ${RABBITMQ_PASS}
+      STRIPE_WRAPPER_URL:       ${STRIPE_WRAPPER_URL}
+      PAYMENT_LOG_GRPC_HOST:    ${PAYMENT_LOG_GRPC_HOST}
+      PAYMENT_LOG_GRPC_PORT:    ${PAYMENT_LOG_GRPC_PORT}
+      VERIFICATION_GRPC_HOST:   ${VERIFICATION_GRPC_HOST}
+      VERIFICATION_GRPC_PORT:   ${VERIFICATION_GRPC_PORT}
     depends_on:
       rabbitmq:
         condition: service_started
@@ -223,6 +225,8 @@ services:
       stripe-wrapper:
         condition: service_started
       payment-log-service:
+        condition: service_started
+      verification-service:
         condition: service_started
 
   stripe-wrapper:
