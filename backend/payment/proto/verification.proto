@@ -1,0 +1,31 @@
+syntax = "proto3";
+
+package verification;
+
+// Minimal subset used by the Payment Service.
+// Full proto lives in backend/verification/proto/verification.proto.
+
+message VerifyUserRequest {
+  int32 user_id    = 1;
+  int32 listing_id = 2;
+}
+
+message VerifyResponse {
+  bool   approved         = 1;
+  string rejection_reason = 2;
+}
+
+message RecordUserNoShowRequest {
+  int32  user_id        = 1;
+  string transaction_id = 2;
+}
+
+message RecordUserNoShowResponse {
+  bool  recorded      = 1;
+  int32 total_noshows = 2;
+}
+
+service VerificationService {
+  rpc VerifyPublicUser  (VerifyUserRequest)           returns (VerifyResponse);
+  rpc RecordUserNoShow  (RecordUserNoShowRequest)     returns (RecordUserNoShowResponse);
+}

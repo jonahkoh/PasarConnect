@@ -20,7 +20,8 @@ RUN python -m grpc_tools.protoc \
     --python_out=. \
     --grpc_python_out=. \
     ./proto/inventory.proto \
-    ./proto/payment_log.proto
+    ./proto/payment_log.proto \
+    ./proto/verification.proto
 
 EXPOSE 8003
 

@@ -13,8 +13,9 @@ enum PaymentStatus {
   PENDING = 1;
   SUCCESS = 2;
   COLLECTED = 3;
-  REFUNDED = 4;
+  REFUNDED = 4;   // money returned to user
   FAILED = 5;
+  FORFEITED = 6;  // user no-showed after window — no refund issued
 }
 
 message CreatePaymentLogRequest {
@@ -44,6 +45,8 @@ message GetPaymentLogResponse {
   int32 listing_id = 4;
   int32 listing_version = 5;
   double amount = 6;
+  string created_at = 7;  // ISO 8601 UTC — when intent was created
+  string updated_at = 8;  // ISO 8601 UTC — when status last changed; empty if never updated
 }
 
 message UpdatePaymentStatusRequest {

@@ -1,7 +1,7 @@
 """
 Payment Service — Orchestrator.
 
-This service has NO database of its own.  It coordinates three downstream
+This service has NO database of its own.  It coordinates four downstream
 services and owns the workflow logic only:
 
   ┌─────────────┐  HTTP   ┌──────────────────────┐      HTTP
@@ -13,12 +13,15 @@ services and owns the workflow logic only:
           ┌──────────────────┐              ┌──────────────────┐    ┌──────────────────┐
           │  Inventory Svc   │              │  Stripe Wrapper  │    │  Payment Log Svc │
           └──────────────────┘              └──────────────────┘    └──────────────────┘
-                                     
+          ┌──────────────────┐
+          │ Verification Svc │  (gRPC — user eligibility check)
+          └──────────────────┘
 
 Workflow 1 — Intent Creation (POST /payments/intent)
+  0. gRPC  → Verification: check user standing (BANNED / noshow limit → 403)
   1. gRPC  → Inventory: soft lock listing (AVAILABLE → PENDING_PAYMENT)
   2. HTTP  → Stripe Wrapper: create PaymentIntent, get client_secret
-    3. gRPC  → Payment Log: persist record with status=PENDING
+  3. gRPC  → Payment Log: persist record with status=PENDING
   4. Return client_secret to UI
 
 Workflow 2 — Webhook Fulfillment (POST /webhooks/stripe)
@@ -36,6 +39,7 @@ Workflow 2 — Webhook Fulfillment (POST /webhooks/stripe)
 """
 import logging
 import os
+import datetime
 from contextlib import asynccontextmanager
 
 import grpc
@@ -48,7 +52,9 @@ from math import isclose
 import inventory_client
 import payment_log_client
 import publisher
-from schemas import PaymentIntentRequest, StripeWebhookPayload
+import verification_client
+from schemas import PaymentIntentRequest, PaymentNoShowRequest, StripeWebhookPayload, UserCancelRequest
+from verification_client import UserNotEligibleError
 
 load_dotenv()
 
@@ -73,6 +79,28 @@ async def health_check():
 
 
 # ── Helper: call an internal service and surface errors cleanly ───────────────
+
+CANCELLATION_WINDOW_MINUTES = 1    # TESTING: set to 1 min (production intent: 10 mins)
+VENDOR_WARNING_MINUTES      = 1    # TESTING: set to 1 min (production intent: 30 mins)
+
+
+def _minutes_since_payment(log) -> float:
+    """
+    Returns minutes elapsed since the payment was confirmed (moved to SUCCESS).
+    Uses updated_at (set by the SUCCESS webhook transition) with created_at as fallback.
+    """
+    ts_str = log.updated_at if log.updated_at else log.created_at
+    if not ts_str:
+        return 0.0
+    try:
+        paid_at = datetime.datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+    except (ValueError, AttributeError):
+        return 0.0
+    now = datetime.datetime.now(tz=datetime.timezone.utc)
+    if paid_at.tzinfo is None:
+        paid_at = paid_at.replace(tzinfo=datetime.timezone.utc)
+    return (now - paid_at).total_seconds() / 60
+
 
 async def _post(client: httpx.AsyncClient, url: str, body: dict) -> dict:
     """
@@ -109,14 +137,21 @@ async def _require_success_payment_log(transaction_id: str, action: str):
 @app.post("/payments/intent", status_code=201)
 async def create_payment_intent(payload: PaymentIntentRequest):
     """
-    Called by the UI when a charity selects a listing to purchase.
+    Called by the UI when a public user selects a listing to purchase.
 
     Steps:
+      0. Verify the user's standing with the Verification Service.
       1. Soft-lock the listing in Inventory (AVAILABLE → PENDING_PAYMENT).
       2. Ask the Stripe Wrapper to create a PaymentIntent.
       3. Tell the Payment Log to persist a PENDING record.
       4. Return the client_secret so the UI can render the Stripe payment form.
     """
+    # Step 0 — Verify user eligibility before touching inventory
+    try:
+        await verification_client.verify_public_user(payload.user_id, payload.listing_id)
+    except UserNotEligibleError as exc:
+        raise HTTPException(status_code=403, detail=f"User ineligible: {exc.reason}")
+
     # Step 1 — Soft lock in Inventory
     # If the listing is already taken, gRPC returns ABORTED (version mismatch)
     # or NOT_FOUND — we let those propagate as 409 / 404 via the exception handler.
@@ -175,12 +210,24 @@ async def stripe_webhook(payload: StripeWebhookPayload):
     log = await _fetch_payment_log_or_raise(payload.stripe_transaction_id)
 
     status_name = _payment_status_name(log.status)
-    if status_name in ("SUCCESS", "COLLECTED", "REFUNDED"):
+    if status_name in ("SUCCESS", "COLLECTED", "REFUNDED", "FORFEITED"):
         logger.info(
             "Duplicate webhook — transaction_id=%s already %s.",
             payload.stripe_transaction_id, status_name,
         )
         return {"status": "already_processed"}
+
+    # Guardrail: webhook listing_id must match what was stored at intent creation.
+    if payload.listing_id != log.listing_id:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "listing_id_mismatch",
+                "message": "Webhook listing_id does not match the stored intent.",
+                "expected_listing_id": log.listing_id,
+                "received_listing_id": payload.listing_id,
+            },
+        )
 
     # Guardrail: webhook amount must match the amount persisted at intent creation.
     if not isclose(payload.amount, log.amount, abs_tol=1e-6):
@@ -197,10 +244,10 @@ async def stripe_webhook(payload: StripeWebhookPayload):
 
     listing_version = log.listing_version
 
-    # ── Step 2: Move to collection flow (PENDING_PAYMENT → PENDING_COLLECTION) ─
+    # ── Step 2: Move to collection flow (PENDING_PAYMENT → SOLD_PENDING_COLLECTION) ─
     try:
-        new_version = await inventory_client.mark_listing_pending_collection(
-            payload.listing_id, listing_version
+        new_version = await inventory_client.mark_listing_sold_pending_collection(
+            log.listing_id, listing_version
         )
 
     except grpc.aio.AioRpcError as exc:
@@ -274,12 +321,12 @@ async def stripe_webhook(payload: StripeWebhookPayload):
 
     await publisher.publish_payment_success(
         transaction_id = payload.stripe_transaction_id,
-        listing_id     = payload.listing_id,
+        listing_id     = log.listing_id,
     )
 
     logger.info(
-        "Payment fulfilled — transaction_id=%s listing_id=%s.",
-        payload.stripe_transaction_id, payload.listing_id,
+        "Payment fulfilled — transaction_id=%s listing_id=%s status=SOLD_PENDING_COLLECTION.",
+        payload.stripe_transaction_id, log.listing_id,
     )
     return {"status": "ok", "transaction_id": payload.stripe_transaction_id}
 
@@ -326,9 +373,16 @@ async def approve_payment(transaction_id: str):
 
 @app.post("/payments/{transaction_id}/reject")
 async def reject_payment(transaction_id: str):
+    """
+    Vendor-initiated rejection.  User is always refunded.
+    A warning is included in the response if the vendor rejects more than
+    30 minutes after the payment was confirmed.
+    """
     import payment_log_pb2
 
     log = await _require_success_payment_log(transaction_id, action="rejected")
+    minutes_elapsed = _minutes_since_payment(log)
+    vendor_warning  = minutes_elapsed > VENDOR_WARNING_MINUTES
 
     async with httpx.AsyncClient() as client:
         try:
@@ -377,5 +431,173 @@ async def reject_payment(transaction_id: str):
         "transaction_id": transaction_id,
         "new_status": "REFUNDED",
         "inventory_version": new_version,
+        **({
+            "vendor_warning": (
+                f"Rejection occurred {round(minutes_elapsed, 1)} minutes after payment — "
+                "exceeds the expected 30-minute fulfilment window."
+            )
+        } if vendor_warning else {}),
+    }
+
+
+@app.post("/payments/{transaction_id}/cancel", status_code=200)
+async def cancel_payment(transaction_id: str, body: UserCancelRequest):
+    """
+    User-initiated cancellation.  Only permitted within 10 minutes of payment confirmation.
+    After the window closes the endpoint returns 409 and the payment is not refunded.
+    """
+    import payment_log_pb2
+
+    log = await _require_success_payment_log(transaction_id, action="cancelled")
+    minutes_elapsed = _minutes_since_payment(log)
+
+    if minutes_elapsed > CANCELLATION_WINDOW_MINUTES:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "cancellation_window_expired",
+                "message": (
+                    f"Cancellation window has expired. "
+                    f"You had {CANCELLATION_WINDOW_MINUTES} minutes after payment to cancel. "
+                    f"{round(minutes_elapsed, 1)} minutes have elapsed."
+                ),
+                "minutes_elapsed": round(minutes_elapsed, 1),
+                "window_minutes": CANCELLATION_WINDOW_MINUTES,
+            },
+        )
+
+    # Within window — refund and rollback
+    async with httpx.AsyncClient() as client:
+        try:
+            await _post(
+                client,
+                f"{STRIPE_WRAPPER_URL}/stripe/refund",
+                {"payment_intent_id": transaction_id, "amount": log.amount},
+            )
+        except httpx.HTTPStatusError:
+            raise HTTPException(status_code=503, detail="Refund failed in Stripe Wrapper")
+
+    try:
+        await payment_log_client.update_payment_status_with_version(
+            transaction_id=transaction_id,
+            new_status=payment_log_pb2.REFUNDED,
+        )
+    except grpc.aio.AioRpcError as exc:
+        raise payment_log_client.map_payment_log_grpc_error(exc)
+
+    try:
+        new_version = await inventory_client.rollback_listing_to_available(
+            listing_id=log.listing_id,
+            expected_version=log.listing_version,
+        )
+    except grpc.aio.AioRpcError as exc:
+        if exc.code() == grpc.StatusCode.ABORTED:
+            raise HTTPException(
+                status_code=409,
+                detail="Refund succeeded but listing version changed before rollback. Manual inventory recovery required",
+            )
+        if exc.code() == grpc.StatusCode.NOT_FOUND:
+            raise HTTPException(status_code=404, detail="Refund succeeded but listing no longer exists")
+        raise HTTPException(status_code=503, detail="Refund succeeded but inventory rollback failed")
+
+    await publisher.publish_payment_failure(
+        transaction_id=transaction_id,
+        listing_id=log.listing_id,
+        reason="User cancelled within cancellation window",
+    )
+
+    return {
+        "status": "ok",
+        "transaction_id": transaction_id,
+        "new_status": "REFUNDED",
+        "minutes_elapsed": round(minutes_elapsed, 1),
+        "inventory_version": new_version,
+    }
+
+
+@app.post("/payments/{transaction_id}/noshow", status_code=200)
+async def noshow_payment(transaction_id: str, body: PaymentNoShowRequest):
+    """
+    Called by the vendor when a public user fails to collect their order.
+
+    If the no-show is reported within 10 minutes of payment, the user is refunded
+    (they may genuinely be running late).  After the window, no refund is issued
+    (user forfeits their payment) and the status is set to FORFEITED.
+
+    Flow:
+      1. Fetch payment log — validates transaction exists and is SUCCESS.
+      2. Determine refund eligibility (10-minute window).
+      3a. Within window  → refund + REFUNDED.
+      3b. Past window    → no refund + FORFEITED.
+      4. Rollback Inventory → AVAILABLE (always).
+      5. Record user no-show in Verification Service (always, best-effort).
+      6. Publish payment.failure event.
+    """
+    import payment_log_pb2
+
+    log = await _require_success_payment_log(transaction_id, action="marked as no-show")
+    minutes_elapsed = _minutes_since_payment(log)
+    within_window   = minutes_elapsed <= CANCELLATION_WINDOW_MINUTES
+
+    if within_window:
+        # Step 3a — Refund the user
+        async with httpx.AsyncClient() as client:
+            try:
+                await _post(
+                    client,
+                    f"{STRIPE_WRAPPER_URL}/stripe/refund",
+                    {"payment_intent_id": transaction_id, "amount": log.amount},
+                )
+            except httpx.HTTPStatusError:
+                raise HTTPException(status_code=503, detail="Refund failed in Stripe Wrapper")
+
+        new_log_status = payment_log_pb2.REFUNDED
+    else:
+        # Step 3b — Past cancellation window, no refund
+        new_log_status = payment_log_pb2.FORFEITED
+        logger.info(
+            "No-show after window — no refund issued for transaction_id=%s (%.1f min elapsed)",
+            transaction_id, minutes_elapsed,
+        )
+
+    # Update Payment Log
+    try:
+        await payment_log_client.update_payment_status_with_version(
+            transaction_id=transaction_id,
+            new_status=new_log_status,
+        )
+    except grpc.aio.AioRpcError as exc:
+        raise payment_log_client.map_payment_log_grpc_error(exc)
+
+    # Rollback Inventory → AVAILABLE (regardless of refund)
+    try:
+        await inventory_client.rollback_listing_to_available(
+            listing_id=log.listing_id,
+            expected_version=log.listing_version,
+        )
+    except grpc.aio.AioRpcError:
+        logger.error("Inventory rollback failed for noshow transaction_id=%s", transaction_id)
+
+    # Record user no-show in Verification Service (best-effort)
+    await verification_client.record_user_noshow(
+        user_id=body.user_id,
+        transaction_id=transaction_id,
+    )
+
+    # Publish event
+    await publisher.publish_payment_failure(
+        transaction_id=transaction_id,
+        listing_id=log.listing_id,
+        reason="User no-show — item relisted" + (" (refunded)" if within_window else " (payment forfeited)"),
+    )
+
+    return {
+        "status": "ok",
+        "transaction_id": transaction_id,
+        "user_id": body.user_id,
+        "noshow_recorded": True,
+        "refunded": within_window,
+        "new_status": "REFUNDED" if within_window else "FORFEITED",
+        "minutes_elapsed": round(minutes_elapsed, 1),
     }
 

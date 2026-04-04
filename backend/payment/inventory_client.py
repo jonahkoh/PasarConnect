@@ -55,14 +55,14 @@ async def lock_listing_pending_payment(listing_id: int, expected_version: int) -
     return await _lock_listing(listing_id, expected_version, inventory_pb2.PENDING_PAYMENT)
 
 
+async def mark_listing_sold_pending_collection(listing_id: int, expected_version: int) -> int:
+    """Transitions PENDING_PAYMENT → SOLD_PENDING_COLLECTION after payment confirmed by Stripe."""
+    return await _lock_listing(listing_id, expected_version, inventory_pb2.SOLD_PENDING_COLLECTION)
+
+
 async def mark_listing_sold(listing_id: int, expected_version: int) -> int:
-    """Transitions PENDING_PAYMENT → SOLD.  Happy path after a charge succeeds."""
+    """Transitions SOLD_PENDING_COLLECTION → SOLD.  Called when vendor confirms collection."""
     return await _lock_listing(listing_id, expected_version, inventory_pb2.SOLD)
-
-
-async def mark_listing_pending_collection(listing_id: int, expected_version: int) -> int:
-    """Transitions PENDING_PAYMENT → PENDING_COLLECTION after payment succeeds."""
-    return await _lock_listing(listing_id, expected_version, inventory_pb2.PENDING_COLLECTION)
 
 
 async def rollback_listing_to_available(listing_id: int, expected_version: int) -> int:
