@@ -33,9 +33,3 @@ class PaymentLogResponse(BaseModel):
     amount                : float
     created_at            : datetime.datetime
     updated_at            : datetime.datetime | None
-
-
-# Backward-compatible aliases used by existing endpoint code.
-LogCreate = PaymentLogCreate
-LogUpdate = PaymentLogUpdate
-LogResponse = PaymentLogResponse

@@ -31,6 +31,7 @@ async def lifespan(app: FastAPI):
                 BEGIN
                     IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'paymentstatus') THEN
                         ALTER TYPE paymentstatus ADD VALUE IF NOT EXISTS 'COLLECTED';
+                        ALTER TYPE paymentstatus ADD VALUE IF NOT EXISTS 'FORFEITED';
                     END IF;
                 END
                 $$;

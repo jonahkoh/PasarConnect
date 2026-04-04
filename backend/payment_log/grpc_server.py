@@ -17,6 +17,7 @@ _STATUS_MAP = {
     payment_log_pb2.COLLECTED: PaymentStatus.COLLECTED,
     payment_log_pb2.REFUNDED: PaymentStatus.REFUNDED,
     payment_log_pb2.FAILED: PaymentStatus.FAILED,
+    payment_log_pb2.FORFEITED: PaymentStatus.FORFEITED,
 }
 
 _REVERSE_STATUS_MAP = {
@@ -25,14 +26,16 @@ _REVERSE_STATUS_MAP = {
     PaymentStatus.COLLECTED: payment_log_pb2.COLLECTED,
     PaymentStatus.REFUNDED: payment_log_pb2.REFUNDED,
     PaymentStatus.FAILED: payment_log_pb2.FAILED,
+    PaymentStatus.FORFEITED: payment_log_pb2.FORFEITED,
 }
 
 _ALLOWED_TRANSITIONS = {
     PaymentStatus.PENDING: {PaymentStatus.SUCCESS, PaymentStatus.REFUNDED, PaymentStatus.FAILED},
-    PaymentStatus.SUCCESS: {PaymentStatus.COLLECTED, PaymentStatus.REFUNDED},
+    PaymentStatus.SUCCESS: {PaymentStatus.COLLECTED, PaymentStatus.REFUNDED, PaymentStatus.FORFEITED},
     PaymentStatus.COLLECTED: set(),
     PaymentStatus.REFUNDED: set(),
     PaymentStatus.FAILED: set(),
+    PaymentStatus.FORFEITED: set(),
 }
 
 
@@ -99,6 +102,8 @@ class PaymentLogServicer(payment_log_pb2_grpc.PaymentLogServiceServicer):
                 listing_id=record.listing_id,
                 listing_version=record.listing_version,
                 amount=record.amount,
+                created_at=record.created_at.isoformat() if record.created_at else "",
+                updated_at=record.updated_at.isoformat() if record.updated_at else "",
             )
 
     async def UpdatePaymentStatus(self, request, context):

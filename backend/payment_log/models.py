@@ -24,8 +24,9 @@ class PaymentStatus(str, enum.Enum):
     PENDING  = "PENDING"   # intent created, waiting for Stripe confirmation
     SUCCESS  = "SUCCESS"   # charge confirmed (payment succeeded)
     COLLECTED = "COLLECTED"  # item collection approved and completed
-    REFUNDED = "REFUNDED"  # compensating transaction executed
+    REFUNDED = "REFUNDED"  # money returned to user
     FAILED   = "FAILED"    # refund itself failed — requires manual ops
+    FORFEITED = "FORFEITED" # user no-showed after cancellation window; no refund issued
 
 
 class PaymentRecord(Base):
