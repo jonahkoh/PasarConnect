@@ -3,8 +3,9 @@ syntax = "proto3";
 package claimlog;
 
 service ClaimLogService {
-  rpc CreateClaimLog (CreateClaimLogRequest) returns (CreateClaimLogResponse);
-  rpc UpdateClaimStatus (UpdateClaimStatusRequest) returns (UpdateClaimStatusResponse);
+  rpc CreateClaimLog    (CreateClaimLogRequest)    returns (CreateClaimLogResponse);
+  rpc UpdateClaimStatus (UpdateClaimStatusRequest)  returns (UpdateClaimStatusResponse);
+  rpc GetClaimLog       (GetClaimLogRequest)         returns (GetClaimLogResponse);
 }
 
 enum ClaimStatus {
@@ -41,4 +42,17 @@ message CreateClaimLogResponse {
   int32 charity_id = 3;
   int32 listing_version = 4;
   ClaimStatus status = 5;
+}
+
+message GetClaimLogRequest {
+  int32 claim_id = 1;
+}
+
+message GetClaimLogResponse {
+  int32       id              = 1;
+  int32       listing_id      = 2;
+  int32       charity_id      = 3;
+  int32       listing_version = 4;
+  ClaimStatus status          = 5;
+  string      created_at      = 6;  // ISO-8601 UTC — used for cancel grace-window check
 }

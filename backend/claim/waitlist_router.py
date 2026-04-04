@@ -1,124 +1,66 @@
 """
-Waitlist endpoints for the Claim Service.
+Waitlist proxy endpoints for the Claim Service.
 
-POST   /claims/{listing_id}/waitlist              — charity joins the waitlist
+All persistent state is now owned by the Waitlist Service (waitlist-service:8010).
+These endpoints are thin HTTP proxies; the promotion orchestration logic stays here.
+
+POST   /claims/{listing_id}/waitlist              — charity joins the queue
 GET    /claims/{listing_id}/waitlist              — view current queue (position-ordered)
 DELETE /claims/{listing_id}/waitlist/{charity_id} — charity leaves voluntarily
 
-Internal helper (used by cancel_claim in claim.py):
+Internal helper (called by claim.py endpoints):
   try_promote_next(listing_id, available_version)
-    → auto-assigns the item to the next eligible charity in line
-    → returns (promoted_charity_id, new_inventory_version) or (None, available_version)
+    → orchestrates promotion of the next eligible charity from the waitlist
+    → returns (promoted_charity_id, new_version) or (None, available_version)
 """
 import logging
 
 import grpc
+import claim_log_pb2
 from fastapi import APIRouter, HTTPException
-from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
 
 import claim_log_client
 import inventory_client
 import publisher
 import verification_client
+import waitlist_client
 from schemas import WaitlistJoin, WaitlistPosition, WaitlistListEntry
-from waitlist_db import AsyncSessionLocal, WaitlistEntry
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/claims", tags=["waitlist"])
 
 
-# ── Endpoints ─────────────────────────────────────────────────────────────────
+
+# ── Charity-facing endpoints (proxied to Waitlist Service) ────────────────────
 
 @router.post("/{listing_id}/waitlist", response_model=WaitlistPosition, status_code=201)
 async def join_waitlist(listing_id: int, body: WaitlistJoin):
-    """
-    A charity joins the waitlist for a listing that is PENDING_COLLECTION.
-    Returns their queue position (1 = next in line).
-    """
-    async with AsyncSessionLocal() as db:
-        # Count how many charities are already WAITING ahead of this one
-        count_result = await db.execute(
-            select(WaitlistEntry).where(
-                WaitlistEntry.listing_id == listing_id,
-                WaitlistEntry.status == "WAITING",
-            )
-        )
-        current_queue = count_result.scalars().all()
-
-        entry = WaitlistEntry(
-            listing_id=listing_id,
-            charity_id=body.charity_id,
-            status="WAITING",
-        )
-        db.add(entry)
-        try:
-            await db.commit()
-        except IntegrityError:
-            await db.rollback()
-            raise HTTPException(
-                status_code=409,
-                detail="Already on the waitlist for this listing",
-            )
-
-        position = len(current_queue) + 1
-        logger.info(
-            "Charity %s joined waitlist for listing %s at position %s",
-            body.charity_id, listing_id, position,
-        )
-        return WaitlistPosition(
-            listing_id=listing_id,
-            charity_id=body.charity_id,
-            position=position,
-        )
+    """Charity joins the waitlist for a listing. Returns their queue position."""
+    return await waitlist_client.join_waitlist(listing_id, body.charity_id)
 
 
 @router.get("/{listing_id}/waitlist", response_model=list[WaitlistListEntry])
 async def get_waitlist(listing_id: int):
     """Returns the current WAITING queue for a listing, ordered by join time."""
-    async with AsyncSessionLocal() as db:
-        result = await db.execute(
-            select(WaitlistEntry)
-            .where(
-                WaitlistEntry.listing_id == listing_id,
-                WaitlistEntry.status == "WAITING",
-            )
-            .order_by(WaitlistEntry.joined_at)
-        )
-        entries = result.scalars().all()
-
+    entries = await waitlist_client.get_waiting_entries(listing_id)
     return [
         WaitlistListEntry(
-            listing_id=e.listing_id,
-            charity_id=e.charity_id,
-            position=i + 1,
+            listing_id=e["listing_id"],
+            charity_id=e["charity_id"],
+            position=e["position"],
         )
-        for i, e in enumerate(entries)
+        for e in entries
     ]
 
 
 @router.delete("/{listing_id}/waitlist/{charity_id}", status_code=204)
 async def leave_waitlist(listing_id: int, charity_id: int):
-    """A charity voluntarily removes themselves from the waitlist."""
-    async with AsyncSessionLocal() as db:
-        result = await db.execute(
-            select(WaitlistEntry).where(
-                WaitlistEntry.listing_id == listing_id,
-                WaitlistEntry.charity_id == charity_id,
-                WaitlistEntry.status == "WAITING",
-            )
-        )
-        entry = result.scalar_one_or_none()
-        if not entry:
-            raise HTTPException(status_code=404, detail="Not found on waitlist for this listing")
-
-        entry.status = "CANCELLED"
-        await db.commit()
-        logger.info("Charity %s left waitlist for listing %s", charity_id, listing_id)
+    """Charity voluntarily removes themselves from the waitlist."""
+    await waitlist_client.leave_waitlist(listing_id, charity_id)
 
 
-# ── Internal helper ───────────────────────────────────────────────────────────
+# ── Internal orchestration helper ─────────────────────────────────────────────
 
 async def try_promote_next(
     listing_id: int,
@@ -127,29 +69,24 @@ async def try_promote_next(
     """
     Walk through the WAITING queue in FIFO order.
     For each charity:
-      1. Run VerifyCharity (quota + legal check via gRPC).
-      2. If eligible: lock inventory (available_version → new_version), create claim log,
-         mark entry as PROMOTED, publish events, return (charity_id, new_version).
-      3. If ineligible: mark entry as CANCELLED (skipped), try the next one.
-
-    Returns (promoted_charity_id, final_version).
-    If the queue is exhausted without a successful promotion, returns (None, available_version).
+      1. VerifyCharity (quota + legal check via Verification Service gRPC).
+      2. If eligible: lock inventory (available_version → new_version), create
+         claim log, mark waitlist entry PROMOTED, publish claim.waitlist.promoted.
+      3. If ineligible: mark entry CANCELLED, try the next charity.
+    Returns (promoted_charity_id, new_version).
+    Returns (None, available_version) if the queue is exhausted.
     """
-    async with AsyncSessionLocal() as db:
-        result = await db.execute(
-            select(WaitlistEntry)
-            .where(
-                WaitlistEntry.listing_id == listing_id,
-                WaitlistEntry.status == "WAITING",
-            )
-            .order_by(WaitlistEntry.joined_at)
-        )
-        entries = result.scalars().all()
+    try:
+        entries = await waitlist_client.get_waiting_entries(listing_id)
+    except HTTPException as exc:
+        logger.error("Could not fetch waitlist entries during promotion: %s", exc.detail)
+        return None, available_version
 
     current_version = available_version
 
     for entry in entries:
-        charity_id = entry.charity_id
+        charity_id = entry["charity_id"]
+        entry_id   = entry["id"]
 
         # 1. Eligibility check via Verification Service (records quota on success)
         try:
@@ -157,7 +94,9 @@ async def try_promote_next(
                 charity_id, listing_id
             )
         except Exception as exc:
-            logger.warning("Verification call failed for charity %s: %s — skipping", charity_id, exc)
+            logger.warning(
+                "Verification call failed for charity %s: %s — skipping", charity_id, exc
+            )
             valid, reason = False, "VERIFICATION_ERROR"
 
         if not valid:
@@ -165,14 +104,10 @@ async def try_promote_next(
                 "Skipping waitlist charity %s for listing %s: %s",
                 charity_id, listing_id, reason,
             )
-            async with AsyncSessionLocal() as db:
-                r = await db.execute(select(WaitlistEntry).where(WaitlistEntry.id == entry.id))
-                e = r.scalar_one()
-                e.status = "CANCELLED"
-                await db.commit()
+            await waitlist_client.update_entry_status(entry_id, "CANCELLED")
             continue
 
-        # 2. Lock inventory for promoted charity (available_version → new_version)
+        # 2. Lock inventory for promoted charity (current_version → new_version)
         try:
             new_version = await inventory_client.lock_listing_pending_collection(
                 listing_id=listing_id,
@@ -188,7 +123,6 @@ async def try_promote_next(
 
         # 3. Create claim log entry for promoted charity via gRPC
         try:
-            import claim_log_pb2
             claim_record = await claim_log_client.create_claim_log(
                 listing_id=listing_id,
                 charity_id=charity_id,
@@ -200,21 +134,18 @@ async def try_promote_next(
                 "Claim log failed for promoted charity %s listing %s: [%s] %s — rolling back",
                 charity_id, listing_id, exc.code(), exc.details(),
             )
-            # Roll back the inventory lock we just applied
             try:
                 await inventory_client.rollback_listing_to_available(listing_id, new_version)
             except grpc.aio.AioRpcError:
-                logger.error("Rollback after claim log failure also failed for listing %s", listing_id)
+                logger.error(
+                    "Rollback after claim log failure also failed for listing %s", listing_id
+                )
             return None, available_version
 
-        # 4. Mark waitlist entry as PROMOTED
-        async with AsyncSessionLocal() as db:
-            r = await db.execute(select(WaitlistEntry).where(WaitlistEntry.id == entry.id))
-            e = r.scalar_one()
-            e.status = "PROMOTED"
-            await db.commit()
+        # 4. Mark waitlist entry as PROMOTED (best-effort — never aborts a successful promotion)
+        await waitlist_client.update_entry_status(entry_id, "PROMOTED")
 
-        # 5. Publish promotion event → Notification Service sends WebSocket to charity
+        # 5. Publish promotion event → Notification Service WebSockets the charity
         await publisher.publish_waitlist_promoted(
             claim_id=claim_record.id,
             listing_id=listing_id,

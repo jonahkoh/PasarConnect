@@ -66,6 +66,22 @@ services:
       timeout: 5s
       retries: 10
 
+  waitlist-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER:     ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB:       ${WAITLIST_DB_NAME:-waitlist_db}
+    ports:
+      - "5437:5432"
+    volumes:
+      - waitlist-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${WAITLIST_DB_NAME:-waitlist_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   # ── Message Broker ─────────────────────────────────────────────────────────
 
   rabbitmq:
@@ -131,8 +147,8 @@ services:
       VERIFICATION_GRPC_HOST:  ${VERIFICATION_GRPC_HOST}
       VERIFICATION_GRPC_PORT:  ${VERIFICATION_GRPC_PORT}
       PUBLIC_KEY_PATH:         ${PUBLIC_KEY_PATH}
-      # Waitlist table lives in the same Postgres instance as claim-log
-      WAITLIST_DATABASE_URL:   postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${CLAIM_LOG_DB_HOST}:${CLAIM_LOG_DB_PORT}/${CLAIM_LOG_DB_NAME}
+      WAITLIST_SERVICE_URL:    http://waitlist-service:8010
+      CANCEL_WINDOW_MINUTES:   ${CANCEL_WINDOW_MINUTES:-15}
     volumes:
       - ./keys:/app/keys:ro
     depends_on:
@@ -144,6 +160,24 @@ services:
         condition: service_started
       verification-service:
         condition: service_started
+      waitlist-service:
+        condition: service_started
+
+  waitlist-service:
+    build:
+      context: ./backend
+      dockerfile: waitlist/Dockerfile
+    ports:
+      - "8010:8010"
+    environment:
+      DB_HOST:     ${WAITLIST_DB_HOST:-waitlist-db}
+      DB_PORT:     ${WAITLIST_DB_PORT:-5432}
+      DB_USER:     ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_NAME:     ${WAITLIST_DB_NAME:-waitlist_db}
+    depends_on:
+      waitlist-db:
+        condition: service_healthy
 
   outsystems-service:
     build:
@@ -263,3 +297,4 @@ volumes:
   claim-log-db-data:
   payment-log-db-data:
   verification-db-data:
+  waitlist-db-data:

@@ -46,6 +46,7 @@ message GetClaimLogResponse {
   int32       charity_id      = 3;  // required for cancel_claim ownership check
   int32       listing_version = 4;
   ClaimStatus status          = 5;
+  string      created_at      = 6;  // ISO-8601 UTC — used for cancel grace-window check
 }
 
 message CreateClaimLogResponse {

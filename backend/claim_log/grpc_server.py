@@ -85,6 +85,7 @@ class ClaimLogServicer(claim_log_pb2_grpc.ClaimLogServiceServicer):
                 charity_id=record.charity_id,
                 listing_version=record.listing_version,
                 status=_REVERSE_STATUS_MAP[record.status],
+                created_at=record.created_at.isoformat() if record.created_at else "",
             )
 
     async def UpdateClaimStatus(self, request, context):

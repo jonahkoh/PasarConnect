@@ -9,7 +9,7 @@ import logging
 import os
 from contextlib import asynccontextmanager
 
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Annotated
 
 import grpc
@@ -22,7 +22,6 @@ import inventory_client
 import publisher
 import waitlist_router
 from schemas import ClaimCreate, ClaimResponse, CancelClaimRequest
-from waitlist_db import init_db
 from waitlist_router import try_promote_next
 from shared.jwt_auth import verify_jwt_token
 from verification_client import CharityNotEligibleError, cancel_claim_quota, record_noshow, verify_charity  #need to separate verification logic into a new service!
@@ -31,9 +30,25 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
+CANCEL_WINDOW_MINUTES = int(os.getenv("CANCEL_WINDOW_MINUTES", "15"))
+CANCEL_WINDOW = timedelta(minutes=CANCEL_WINDOW_MINUTES)
+
+
+def _within_cancel_window(created_at_str: str) -> bool:
+    """Returns True if the claim was created within CANCEL_WINDOW of now."""
+    if not created_at_str:
+        return True  # err on side of restoring quota if timestamp unavailable
+    try:
+        dt = datetime.fromisoformat(created_at_str)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return (datetime.now(timezone.utc) - dt) <= CANCEL_WINDOW
+    except (ValueError, TypeError):
+        return True
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await init_db()   # create waitlist_entries table if it doesn't exist
     yield
 
 
@@ -218,8 +233,15 @@ async def cancel_claim(claim_id: int, body: CancelClaimRequest):
         claim_id, body.charity_id, listing_id, available_version,
     )
 
-    # 4b. Restore daily quota slot in Verification Service (best-effort — never blocks cancellation)
-    await cancel_claim_quota(charity_id=body.charity_id, listing_id=listing_id)
+    # 4b. Restore daily quota only if within the cancellation grace window.
+    # After CANCEL_WINDOW_MINUTES the slot is consumed — penalises late voluntary cancels.
+    if _within_cancel_window(getattr(claim, "created_at", "")):
+        await cancel_claim_quota(charity_id=body.charity_id, listing_id=listing_id)
+    else:
+        logger.info(
+            "Cancellation outside %d-min window for claim %s charity %s — quota not restored",
+            CANCEL_WINDOW_MINUTES, claim_id, body.charity_id,
+        )
 
     # 5. Promote next from waitlist (auto-assigns listing to next eligible charity)
     promoted_charity_id, _ = await try_promote_next(
