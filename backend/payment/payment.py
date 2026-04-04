@@ -49,6 +49,7 @@ from fastapi import FastAPI, HTTPException
 
 from math import isclose
 
+import payment_log_pb2
 import inventory_client
 import payment_log_client
 import publisher
@@ -113,8 +114,6 @@ async def _post(client: httpx.AsyncClient, url: str, body: dict) -> dict:
 
 
 def _payment_status_name(status_value: int) -> str:
-    import payment_log_pb2
-
     return payment_log_pb2.PaymentStatus.Name(status_value)
 
 
@@ -206,8 +205,6 @@ async def stripe_webhook(payload: StripeWebhookPayload):
       3b. gRPC success → update log to SUCCESS and publish payment.success.
     """
     # ── Step 1: Idempotency guard ─────────────────────────────────────────
-    import payment_log_pb2
-
     log = await _fetch_payment_log_or_raise(payload.stripe_transaction_id)
 
     status_name = _payment_status_name(log.status)
@@ -284,7 +281,7 @@ async def stripe_webhook(payload: StripeWebhookPayload):
         # Step 3a-iii: Publish failure event for Auditor Service
         await publisher.publish_payment_failure(
             transaction_id = payload.stripe_transaction_id,
-            listing_id     = payload.listing_id,
+            listing_id     = log.listing_id,
             reason         = f"Inventory gRPC error: [{exc.code()}] {exc.details()}",
         )
 
@@ -322,8 +319,6 @@ async def stripe_webhook(payload: StripeWebhookPayload):
 
 @app.post("/payments/{transaction_id}/approve")
 async def approve_payment(transaction_id: str):
-    import payment_log_pb2
-
     log = await _require_success_payment_log(transaction_id, action="approved")
 
     try:
@@ -367,8 +362,6 @@ async def reject_payment(transaction_id: str):
     A warning is included in the response if the vendor rejects more than
     30 minutes after the payment was confirmed.
     """
-    import payment_log_pb2
-
     log = await _require_success_payment_log(transaction_id, action="rejected")
     minutes_elapsed = _minutes_since_payment(log)
     vendor_warning  = minutes_elapsed > VENDOR_WARNING_MINUTES
@@ -435,8 +428,6 @@ async def cancel_payment(transaction_id: str, body: UserCancelRequest):
     User-initiated cancellation.  Only permitted within 10 minutes of payment confirmation.
     After the window closes the endpoint returns 409 and the payment is not refunded.
     """
-    import payment_log_pb2
-
     log = await _require_success_payment_log(transaction_id, action="cancelled")
 
     if body.user_id != log.user_id:
@@ -526,8 +517,6 @@ async def noshow_payment(transaction_id: str, body: PaymentNoShowRequest):
       5. Record user no-show in Verification Service (always, best-effort).
       6. Publish payment.failure event.
     """
-    import payment_log_pb2
-
     log = await _require_success_payment_log(transaction_id, action="marked as no-show")
 
     if body.user_id != log.user_id:
