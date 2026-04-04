@@ -218,18 +218,6 @@ async def stripe_webhook(payload: StripeWebhookPayload):
         )
         return {"status": "already_processed"}
 
-    # Guardrail: webhook listing_id must match what was stored at intent creation.
-    if payload.listing_id != log.listing_id:
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "error": "listing_id_mismatch",
-                "message": "Webhook listing_id does not match the stored intent.",
-                "expected_listing_id": log.listing_id,
-                "received_listing_id": payload.listing_id,
-            },
-        )
-
     # Guardrail: webhook amount must match the amount persisted at intent creation.
     if not isclose(payload.amount, log.amount, abs_tol=1e-6):
         raise HTTPException(

@@ -25,8 +25,8 @@ class UserCancelRequest(BaseModel):
 class StripeWebhookPayload(BaseModel):
     """
     Forwarded by the Stripe Wrapper when a payment_intent.succeeded event
-    arrives from Stripe.  Includes the listing context needed for gRPC.
+    arrives from Stripe.  The transaction_id identifies the payment log record;
+    amount is cross-checked against the stored intent amount to catch discrepancies.
     """
     stripe_transaction_id : str   = Field(..., min_length=1, max_length=128)
-    listing_id            : int   = Field(..., gt=0)
     amount                : float = Field(..., gt=0)
