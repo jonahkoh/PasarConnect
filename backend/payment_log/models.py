@@ -40,6 +40,8 @@ class PaymentRecord(Base):
     # Stored so the Orchestrator can call LockListing(SOLD) with the correct
     # optimistic-lock version it held at intent-creation time.
     listing_version       : Mapped[int]                      = mapped_column(Integer)
+    # The verified buyer — stored so cancel/noshow endpoints can enforce ownership.
+    user_id               : Mapped[int]                      = mapped_column(Integer, nullable=False, default=0)
     amount                : Mapped[float]                    = mapped_column(Float)
     status                : Mapped[PaymentStatus]            = mapped_column(SAEnum(PaymentStatus), default=PaymentStatus.PENDING)
     created_at            : Mapped[datetime.datetime]        = mapped_column(DateTime(timezone=True), server_default=func.now())

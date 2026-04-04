@@ -73,6 +73,7 @@ class PaymentLogServicer(payment_log_pb2_grpc.PaymentLogServiceServicer):
                 stripe_transaction_id=request.transaction_id,
                 listing_id=request.listing_id,
                 listing_version=request.listing_version,
+                user_id=request.user_id,
                 amount=request.amount,
                 status=PaymentStatus.PENDING,
             )
@@ -104,6 +105,7 @@ class PaymentLogServicer(payment_log_pb2_grpc.PaymentLogServiceServicer):
                 amount=record.amount,
                 created_at=record.created_at.isoformat() if record.created_at else "",
                 updated_at=record.updated_at.isoformat() if record.updated_at else "",
+                user_id=record.user_id,
             )
 
     async def UpdatePaymentStatus(self, request, context):

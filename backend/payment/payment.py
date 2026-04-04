@@ -182,6 +182,7 @@ async def create_payment_intent(payload: PaymentIntentRequest):
             listing_id=payload.listing_id,
             listing_version=new_version,
             amount=payload.amount,
+            user_id=payload.user_id,
         )
     except grpc.aio.AioRpcError as exc:
         raise payment_log_client.map_payment_log_grpc_error(exc)
@@ -449,6 +450,10 @@ async def cancel_payment(transaction_id: str, body: UserCancelRequest):
     import payment_log_pb2
 
     log = await _require_success_payment_log(transaction_id, action="cancelled")
+
+    if body.user_id != log.user_id:
+        raise HTTPException(status_code=403, detail="user_id does not match the transaction owner")
+
     minutes_elapsed = _minutes_since_payment(log)
 
     if minutes_elapsed > CANCELLATION_WINDOW_MINUTES:
@@ -536,6 +541,10 @@ async def noshow_payment(transaction_id: str, body: PaymentNoShowRequest):
     import payment_log_pb2
 
     log = await _require_success_payment_log(transaction_id, action="marked as no-show")
+
+    if body.user_id != log.user_id:
+        raise HTTPException(status_code=403, detail="user_id does not match the transaction owner")
+
     minutes_elapsed = _minutes_since_payment(log)
     within_window   = minutes_elapsed <= CANCELLATION_WINDOW_MINUTES
 

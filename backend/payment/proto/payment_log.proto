@@ -23,6 +23,7 @@ message CreatePaymentLogRequest {
   int32 listing_id = 2;
   int32 listing_version = 3;
   double amount = 4;
+  int32 user_id = 5;  // the public user who made the purchase
 }
 
 message CreatePaymentLogResponse {
@@ -47,6 +48,7 @@ message GetPaymentLogResponse {
   double amount = 6;
   string created_at = 7;  // ISO 8601 UTC — when intent was created
   string updated_at = 8;  // ISO 8601 UTC — when status last changed; empty if never updated
+  int32 user_id = 9;      // the public user who made the purchase
 }
 
 message UpdatePaymentStatusRequest {

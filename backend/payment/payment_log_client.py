@@ -20,6 +20,7 @@ async def create_payment_log(
     listing_id: int,
     listing_version: int,
     amount: float,
+    user_id: int,
 ):
     import payment_log_pb2
     import payment_log_pb2_grpc
@@ -32,6 +33,7 @@ async def create_payment_log(
                 listing_id=listing_id,
                 listing_version=listing_version,
                 amount=amount,
+                user_id=user_id,
             )
         )
 
