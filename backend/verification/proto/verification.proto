@@ -31,7 +31,7 @@ message CancelClaimRequest {
 // Record a public user no-show after a paid purchase (food wastage tracking)
 message RecordUserNoShowRequest {
   int32  user_id        = 1;
-  string transaction_id = 2;
+  string transaction_id = 2;  // Stripe payment_intent_id — links back to the purchase
 }
 
 // Full status queries — OutSystems wrapper calls after login to enrich the JWT response
@@ -60,12 +60,12 @@ message RecordNoShowResponse {
 }
 
 message CancelClaimResponse {
-  bool cancelled = 1;
+  bool cancelled = 1;  // true if a matching active claim was found and cancelled
 }
 
 message RecordUserNoShowResponse {
-  bool  recorded      = 1;
-  int32 total_noshows = 2;
+  bool  recorded      = 1;  // always true on success
+  int32 total_noshows = 2;  // lifetime no-show count for this user
 }
 
 message CharityStatusResponse {
@@ -79,10 +79,10 @@ message CharityStatusResponse {
 }
 
 message UserStatusResponse {
-  bool   is_flagged    = 1;
-  string flag_reason   = 2;
-  int32  flag_count    = 3;
-  int32  total_noshows = 4;
+  bool   is_flagged    = 1;  // admin-set scalping flag
+  string flag_reason   = 2;  // description of why flagged, "" if not flagged
+  int32  flag_count    = 3;  // cumulative flag count
+  int32  total_noshows = 4;  // lifetime no-show count from public_user_noshows
 }
 
 message VendorStatusResponse {

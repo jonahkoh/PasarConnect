@@ -15,6 +15,9 @@ COPY claim/ ./claim/
 COPY shared/ ./shared/
 WORKDIR /app/claim
 
+# Make the shared/ package importable from /app
+ENV PYTHONPATH=/app
+
 # Generate gRPC stubs from the service's own proto copies
 RUN python -m grpc_tools.protoc \
     -I./proto \

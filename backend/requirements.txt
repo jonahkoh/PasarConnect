@@ -23,6 +23,9 @@ aio-pika==9.4.3
 # Geohash encoding/decoding for location-based search
 geohash2==1.1
 
+# JWT decode/encode (OutSystems wrapper + shared jwt_auth)
+PyJWT==2.9.0
+
 # ── Testing ───────────────────────────────────────────────────────────────────
 pytest==8.3.4
 pytest-asyncio==0.24.0

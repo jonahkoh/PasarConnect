@@ -6,12 +6,13 @@ import os
 # This hook fires before every test and ensures the correct service path is at
 # the front of sys.path for that test.
 
-BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
-INVENTORY_PATH = os.path.join(BACKEND_DIR, "inventory")
-CLAIM_PATH     = os.path.join(BACKEND_DIR, "claim")
-PAYMENT_PATH = os.path.join(BACKEND_DIR, "payment")
-PAYMENT_LOG_PATH = os.path.join(BACKEND_DIR, "payment_log")
-CLAIM_LOG_PATH = os.path.join(BACKEND_DIR, "claim_log")
+BACKEND_DIR        = os.path.dirname(os.path.abspath(__file__))
+INVENTORY_PATH     = os.path.join(BACKEND_DIR, "inventory")
+CLAIM_PATH         = os.path.join(BACKEND_DIR, "claim")
+PAYMENT_PATH       = os.path.join(BACKEND_DIR, "payment")
+PAYMENT_LOG_PATH   = os.path.join(BACKEND_DIR, "payment_log")
+CLAIM_LOG_PATH     = os.path.join(BACKEND_DIR, "claim_log")
+VERIFICATION_PATH  = os.path.join(BACKEND_DIR, "verification")
 
 _SHARED_MODULES = [
     "database", "models", "schemas",
@@ -30,6 +31,7 @@ def _set_service_path(service_path: str, also_include: str | None = None):
         PAYMENT_PATH,
         PAYMENT_LOG_PATH,
         CLAIM_LOG_PATH,
+        VERIFICATION_PATH,
     ]:
         if p in sys.path:
             sys.path.remove(p)

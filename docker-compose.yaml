@@ -148,7 +148,7 @@ services:
   outsystems-service:
     build:
       context: ./backend
-      dockerfile: outsystems/Dockerfile
+      dockerfile: outsystems_wrapper/Dockerfile
     ports:
       - "8007:8007"   # HTTP — charity/vendor/public user login → OutSystems → JWT
     environment:
@@ -157,21 +157,23 @@ services:
       OUTSYSTEMS_TIMEOUT_SECONDS: ${OUTSYSTEMS_TIMEOUT_SECONDS}
       MOCK_OUTSYSTEMS:            ${MOCK_OUTSYSTEMS}
       MOCK_OUTSYSTEMS_APPROVED:   ${MOCK_OUTSYSTEMS_APPROVED}
+      VERIFICATION_GRPC_HOST:     ${VERIFICATION_GRPC_HOST}
+      VERIFICATION_GRPC_PORT:     ${VERIFICATION_GRPC_PORT}
 
   verification-service:
     build:
       context: ./backend
-      dockerfile: verification_service/Dockerfile
+      dockerfile: verification/Dockerfile
     ports:
       - "8009:8009"   # HTTP — /health only
-      - "50052:50052" # gRPC — VerifyCharity, VerifyPublicUser, RecordNoShow
+      - "50052:50052" # gRPC — VerifyCharity, VerifyPublicUser, RecordNoShow, Get*Status
     environment:
       VERIFICATION_GRPC_PORT:  ${VERIFICATION_GRPC_PORT}
       DATABASE_URL:            postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${VERIFICATION_DB_HOST}:${VERIFICATION_DB_PORT}/${VERIFICATION_DB_NAME}
       MAX_DAILY_CLAIMS:        ${MAX_DAILY_CLAIMS}
-      MAX_DAILY_PURCHASES:     ${MAX_DAILY_PURCHASES}
       MAX_NOSHOWS:             ${MAX_NOSHOWS}
       NOSHOWS_WINDOW_DAYS:     ${NOSHOWS_WINDOW_DAYS}
+      BASE_COOLDOWN_DAYS:      ${BASE_COOLDOWN_DAYS}
       PUBLIC_KEY_PATH:         ${PUBLIC_KEY_PATH}
     volumes:
       - ./keys:/app/keys:ro
