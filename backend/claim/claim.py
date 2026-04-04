@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from typing import Annotated
 
 import grpc
+import claim_log_pb2
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException
 
@@ -98,8 +99,6 @@ async def create_claim(
 
     # 3) Persist to Claim Log service. If this fails, rollback inventory lock.
     try:
-        import claim_log_pb2
-
         claim_record = await claim_log_client.create_claim_log(
             listing_id=body.listing_id,
             charity_id=body.charity_id,
@@ -179,8 +178,6 @@ async def cancel_claim(claim_id: int, body: CancelClaimRequest):
            c. If ineligible: mark CANCELLED, try next charity.
            d. If queue is exhausted: publish claim.cancelled (item is freely claimable again).
     """
-    import claim_log_pb2
-
     # 1. Fetch claim record via gRPC
     try:
         claim = await claim_log_client.get_claim_log(claim_id)
@@ -252,8 +249,6 @@ async def noshow_claim(claim_id: int):
       5. Record no-show in Verification Service (updates charity standing/ban).
       6. Publish claim.cancelled event.
     """
-    import claim_log_pb2
-
     # 1. Fetch claim record
     try:
         claim = await claim_log_client.get_claim_log(claim_id)
@@ -274,8 +269,9 @@ async def noshow_claim(claim_id: int):
         raise claim_log_client.map_claim_log_grpc_error(exc)
 
     # 4. Rollback Inventory → AVAILABLE
+    available_version = None
     try:
-        await inventory_client.rollback_listing_to_available(
+        available_version = await inventory_client.rollback_listing_to_available(
             claim.listing_id, claim.listing_version
         )
     except grpc.aio.AioRpcError:
@@ -285,12 +281,18 @@ async def noshow_claim(claim_id: int):
     # 5. Record no-show in Verification Service (raises 503 if unavailable)
     await record_noshow(charity_id=claim.charity_id, claim_id=claim_id)
 
-    # 6. Publish event (best-effort)
-    await publisher.publish_claim_cancelled(
-        claim_id=claim_id,
-        listing_id=claim.listing_id,
-        charity_id=claim.charity_id,
-    )
+    # 6. Promote next waitlist charity if inventory was successfully rolled back
+    if available_version is not None:
+        promoted_charity_id, _ = await try_promote_next(
+            listing_id=claim.listing_id,
+            available_version=available_version,
+        )
+        if not promoted_charity_id:
+            await publisher.publish_claim_cancelled(
+                claim_id=claim_id,
+                listing_id=claim.listing_id,
+                charity_id=claim.charity_id,
+            )
 
     return {
         "status": "ok",
@@ -302,8 +304,6 @@ async def noshow_claim(claim_id: int):
 
 @app.post("/claims/{claim_id}/arrive")
 async def arrive_claim(claim_id: int):
-    import claim_log_pb2
-
     try:
         result = await claim_log_client.update_claim_status(
             claim_id=claim_id,
@@ -321,8 +321,6 @@ async def arrive_claim(claim_id: int):
 
 @app.post("/claims/{claim_id}/approve")
 async def approve_claim(claim_id: int):
-    import claim_log_pb2
-
     try:
         result = await claim_log_client.update_claim_status(
             claim_id=claim_id,
@@ -349,7 +347,11 @@ async def approve_claim(claim_id: int):
 
 @app.post("/claims/{claim_id}/reject")
 async def reject_claim(claim_id: int):
-    import claim_log_pb2
+    # Fetch first to get charity_id — needed for quota restoration.
+    try:
+        claim = await claim_log_client.get_claim_log(claim_id)
+    except grpc.aio.AioRpcError as exc:
+        raise claim_log_client.map_claim_log_grpc_error(exc)
 
     try:
         result = await claim_log_client.update_claim_status(
@@ -366,6 +368,21 @@ async def reject_claim(claim_id: int):
         )
     except grpc.aio.AioRpcError:
         raise HTTPException(status_code=503, detail="Inventory rollback failed after claim rejection")
+
+    # Restore quota — vendor rejected, not charity's fault (best-effort)
+    await cancel_claim_quota(charity_id=claim.charity_id, listing_id=result.listing_id)
+
+    # Promote next waitlist charity or publish item-available event
+    promoted_charity_id, _ = await try_promote_next(
+        listing_id=result.listing_id,
+        available_version=new_version,
+    )
+    if not promoted_charity_id:
+        await publisher.publish_claim_cancelled(
+            claim_id=claim_id,
+            listing_id=result.listing_id,
+            charity_id=claim.charity_id,
+        )
 
     return {
         "status": "ok",
