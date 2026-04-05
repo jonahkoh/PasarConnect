@@ -142,6 +142,54 @@ async def _resolve_queue_window(listing_id: int) -> None:
     )
     await try_promote_next(listing_id, current_version)
 
+
+async def _score_and_rank_waiting_entry(listing_id: int, charity_id: int) -> None:
+    """
+    Assigns score (from verification service) and rank (tail of current queue) to a
+    newly created WAITING entry, so the rank/score DB columns are never NULL for
+    post-window joiners.
+
+    Uses the same resolve_queue gRPC path as window resolution; non-fatal if any
+    step fails (entry remains in queue, just without a stored rank/score).
+    """
+    try:
+        score = await verification_client.get_charity_score(charity_id)
+
+        entry = await waitlist_grpc_client.get_entry(listing_id, charity_id)
+        if not entry or not entry.get("id"):
+            logger.warning(
+                "_score_and_rank_waiting_entry: entry not found listing=%s charity=%s",
+                listing_id, charity_id,
+            )
+            return
+
+        # Find the highest rank already assigned to WAITING/OFFERED entries
+        # (exclude the new entry itself which has no rank yet)
+        all_entries = await waitlist_grpc_client.get_entries(listing_id, status="")
+        existing_ranks = [
+            e["rank"]
+            for e in all_entries
+            if e["rank"] is not None
+            and e["status"] in {"WAITING", "OFFERED"}
+            and e["charity_id"] != charity_id
+        ]
+        next_rank = (max(existing_ranks) + 1) if existing_ranks else 1
+
+        await waitlist_grpc_client.resolve_queue(
+            listing_id,
+            [{"entry_id": entry["id"], "rank": next_rank, "score": score}],
+        )
+        logger.info(
+            "_score_and_rank_waiting_entry: listing=%s charity=%s → rank=%s score=%s",
+            listing_id, charity_id, next_rank, score,
+        )
+    except Exception as exc:
+        logger.warning(
+            "_score_and_rank_waiting_entry: non-fatal failure listing=%s charity=%s: %s",
+            listing_id, charity_id, exc,
+        )
+
+
 @router.post("/{listing_id}/waitlist", response_model=WaitlistPosition, status_code=201)
 async def join_waitlist(listing_id: int, body: WaitlistJoin):
     """
@@ -179,7 +227,10 @@ async def join_waitlist(listing_id: int, body: WaitlistJoin):
                 listing_id, exc,
             )
 
-    return await waitlist_grpc_client.join_waitlist(listing_id, body.charity_id, status="WAITING")
+    join_result = await waitlist_grpc_client.join_waitlist(listing_id, body.charity_id, status="WAITING")
+    # Populate rank + score in DB immediately so PostgreSQL never shows NULL for WAITING entries
+    await _score_and_rank_waiting_entry(listing_id, body.charity_id)
+    return join_result
 
 
 @router.get("/{listing_id}/waitlist", response_model=list[WaitlistListEntry])
