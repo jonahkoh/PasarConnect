@@ -41,3 +41,23 @@ async def create_listing(payload: dict) -> int:
         raise InventoryServiceError("Inventory failed to create listing", status_code=500)
 
     return response.listing_id
+
+
+async def get_listing_created_at(listing_id: int) -> str:
+    """
+    Returns the listed_at (ISO-8601) timestamp for a listing.
+    Raises InventoryServiceError on failure (caller can treat as non-fatal).
+    """
+    inventory_pb2 = importlib.import_module("inventory_pb2")
+    inventory_pb2_grpc = importlib.import_module("inventory_pb2_grpc")
+
+    try:
+        async with grpc.aio.insecure_channel(INVENTORY_GRPC_ADDR) as channel:
+            stub = inventory_pb2_grpc.InventoryServiceStub(channel)
+            response = await stub.GetListing(
+                inventory_pb2.GetListingRequest(listing_id=listing_id)
+            )
+    except grpc.aio.AioRpcError as exc:
+        raise InventoryServiceError("Inventory service unavailable", status_code=503) from exc
+
+    return response.listed_at

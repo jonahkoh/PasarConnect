@@ -3,10 +3,14 @@
   "version": "1.0.0",
   "main": "notification.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node notification.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "description": ""
+  "description": "",
+  "dependencies": {
+    "amqplib": "^0.10.4",
+    "express": "^4.18.2"
+  }
 }

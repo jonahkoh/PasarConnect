@@ -297,6 +297,21 @@ services:
       payment-log-db:
         condition: service_healthy
 
+  notification-service:
+    build:
+      context: ./backend
+      dockerfile: notification/Dockerfile
+    ports:
+      - "8011:8011"
+    environment:
+      RABBITMQ_HOST: ${RABBITMQ_HOST}
+      RABBITMQ_USER: ${RABBITMQ_USER}
+      RABBITMQ_PASS: ${RABBITMQ_PASS}
+      PORT:          8011
+    depends_on:
+      rabbitmq:
+        condition: service_started
+
 volumes:
   inventory-db-data:
   claim-log-db-data:

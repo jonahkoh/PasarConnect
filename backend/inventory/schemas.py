@@ -14,7 +14,7 @@ class FoodListingCreate(BaseModel):
     quantity: Optional[int] = Field(default=None, gt=0)
     weight_kg: Optional[float] = Field(default=None, gt=0)
     expiry: datetime
-    image_url: Optional[str] = Field(default=None, max_length=1024)
+    image_url: str = Field(..., min_length=1, max_length=1024)
 
     @model_validator(mode="after")
     def validate_required_pairs(self):
