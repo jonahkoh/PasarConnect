@@ -17,7 +17,7 @@ import waitlist_pb2
 import waitlist_pb2_grpc
 from database import AsyncSessionLocal
 from models import WaitlistEntry, WaitlistEntryStatus
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import nullslast
 
@@ -74,14 +74,20 @@ class WaitlistServicer(waitlist_pb2_grpc.WaitlistServiceServicer):
             return waitlist_pb2.PositionResponse()
 
         async with AsyncSessionLocal() as db:
-            # Count current active entries to determine position
+            # Count ALL active entries (QUEUING + WAITING + OFFERED) before inserting,
+            # so the returned position reflects the true queue depth.
+            active_statuses = [
+                WaitlistEntryStatus.QUEUING.value,
+                WaitlistEntryStatus.WAITING.value,
+                WaitlistEntryStatus.OFFERED.value,
+            ]
             count_result = await db.execute(
-                select(WaitlistEntry).where(
+                select(func.count(WaitlistEntry.id)).where(
                     WaitlistEntry.listing_id == listing_id,
-                    WaitlistEntry.status == WaitlistEntryStatus.WAITING,
+                    WaitlistEntry.status.in_(active_statuses),
                 )
             )
-            current_queue = count_result.scalars().all()
+            existing_count = count_result.scalar() or 0
 
             entry = WaitlistEntry(listing_id=listing_id, charity_id=charity_id, status=status)
             db.add(entry)
@@ -92,7 +98,12 @@ class WaitlistServicer(waitlist_pb2_grpc.WaitlistServiceServicer):
                 await context.abort(grpc.StatusCode.ALREADY_EXISTS, "Already on the waitlist for this listing")
                 return waitlist_pb2.PositionResponse()
 
-        position = len(current_queue) + 1
+        # QUEUING entries: position is 0 (TBD — determined at window close via ranking).
+        # WAITING entries: true 1-based position after all existing active entries.
+        if status == WaitlistEntryStatus.QUEUING.value:
+            position = 0
+        else:
+            position = existing_count + 1
         logger.info("Charity %s joined waitlist for listing %s at position %s (status=%s)",
                     charity_id, listing_id, position, status)
         return waitlist_pb2.PositionResponse(listing_id=listing_id, charity_id=charity_id, position=position)

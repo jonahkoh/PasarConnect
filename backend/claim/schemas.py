@@ -44,7 +44,7 @@ class WaitlistPosition(BaseModel):
     """Returned after successfully joining the waitlist."""
     listing_id: int
     charity_id: int
-    position: int  # 1 = next in line
+    position: int  # 0 = QUEUING (position TBD at window close); 1+ = WAITING position in queue
 
 
 class WaitlistListEntry(BaseModel):
