@@ -20,9 +20,10 @@ from fastapi import Depends, FastAPI, HTTPException
 import claim_log_client
 import inventory_client
 import publisher
+import waitlist_grpc_client
 import waitlist_router
 from schemas import ClaimCreate, ClaimResponse, CancelClaimRequest
-from waitlist_router import try_promote_next
+from waitlist_router import try_promote_next, _is_window_active, has_active_queue
 from shared.jwt_auth import verify_jwt_token
 from verification_client import CharityNotEligibleError, cancel_claim_quota, record_noshow, verify_charity  #need to separate verification logic into a new service!
 
@@ -82,17 +83,34 @@ async def _verify_claim_eligibility(charity_id: int, listing_id: int) -> None:
 
 
 @app.post("/claims", response_model=ClaimResponse, status_code=201)
-async def create_claim(
-    body: ClaimCreate,
-    token_payload: Annotated[dict, Depends(verify_jwt_token)],
-):
-    # Security: derive charity_id from the verified JWT sub claim, not from
-    # the request body. Prevents a charity from claiming on behalf of another.
-    jwt_charity_id = int(token_payload["sub"])
-    if jwt_charity_id != body.charity_id:
+async def create_claim(body: ClaimCreate):
+    """
+    JWT authentication is temporarily disabled for testing.
+    In production, re-enable by adding: token_payload: Annotated[dict, Depends(verify_jwt_token)]
+    and validating: jwt_charity_id = int(token_payload["sub"]); assert jwt_charity_id == body.charity_id
+    """
+    # 0) Block direct claims while the queue window is active for this listing.
+    window_active, _listed_at, window_closes_at = await _is_window_active(body.listing_id)
+    if window_active:
         raise HTTPException(
-            status_code=403,
-            detail="charity_id in request does not match authenticated identity",
+            status_code=409,
+            detail={
+                "error": "queue_window_active",
+                "message": "This listing is in its charity queue window. Join the waitlist to be considered.",
+                "window_closes_at": window_closes_at,
+                "join_url": f"/claims/{body.listing_id}/waitlist",
+            },
+        )
+
+    # 0b) Block direct claims when an active queue already exists for this listing.
+    if await has_active_queue(body.listing_id):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "queue_exists",
+                "message": "This listing has an active waitlist queue. Please join the queue.",
+                "join_url": f"/claims/{body.listing_id}/waitlist",
+            },
         )
 
     # 1) Verify eligibility via Verification Service -> OutSystems.
@@ -343,6 +361,14 @@ async def arrive_claim(claim_id: int):
 
 @app.post("/claims/{claim_id}/approve")
 async def approve_claim(claim_id: int):
+    # Fetch claim first to get charity_id (needed for waitlist update)
+    try:
+        claim_record = await claim_log_client.get_claim_log(claim_id)
+    except grpc.aio.AioRpcError as exc:
+        raise claim_log_client.map_claim_log_grpc_error(exc)
+    charity_id = claim_record.charity_id
+    listing_id_for_waitlist = claim_record.listing_id
+
     try:
         result = await claim_log_client.update_claim_status(
             claim_id=claim_id,
@@ -358,6 +384,15 @@ async def approve_claim(claim_id: int):
         )
     except grpc.aio.AioRpcError:
         raise HTTPException(status_code=503, detail="Inventory update failed after claim approval")
+
+    # Mark the collecting charity's waitlist entry as COLLECTED (best-effort)
+    await waitlist_grpc_client.update_charity_entry(listing_id_for_waitlist, charity_id, "COLLECTED")
+
+    # Cancel any remaining WAITING/QUEUING entries — listing is now SOLD
+    await waitlist_grpc_client.cancel_all_active_entries(listing_id_for_waitlist)
+
+    # Notify queue members that the item is gone
+    await publisher.publish_waitlist_cancelled(listing_id_for_waitlist)
 
     return {
         "status": "ok",

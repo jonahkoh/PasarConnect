@@ -109,5 +109,17 @@ service VerificationService {
   // Full public user standing — called by OutSystems wrapper after login
   rpc GetUserStatus    (UserStatusRequest)       returns (UserStatusResponse);
   // Vendor compliance state — called by OutSystems wrapper after login
-  rpc GetVendorStatus  (VendorStatusRequest)     returns (VendorStatusResponse);
+  rpc GetVendorStatus   (VendorStatusRequest)    returns (VendorStatusResponse);
+  // Scoring for queue-window ranking: completed claims minus weighted noshows
+  rpc GetCharityScore   (CharityScoreRequest)    returns (CharityScoreResponse);
+}
+
+message CharityScoreRequest {
+  int32 charity_id = 1;
+}
+
+message CharityScoreResponse {
+  int32 completed_claims = 1;  // all-time non-cancelled claims
+  int32 noshow_count     = 2;  // all-time no-show count
+  int32 score            = 3;  // completed_claims - (noshow_count * 2)
 }

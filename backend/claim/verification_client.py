@@ -180,3 +180,23 @@ async def record_noshow(charity_id: int, claim_id: int) -> None:
                 status_code=502,
                 detail=f"Verification error: [{exc.code()}] {exc.details()}",
             )
+
+
+async def get_charity_score(charity_id: int) -> int:
+    """
+    Calls GetCharityScore RPC — returns integer score (completed_claims - noshow_count * 2).
+    Fail-open: returns 0 on any error so the charity is not excluded from queue ranking.
+    """
+    try:
+        async with grpc.aio.insecure_channel(VERIFICATION_GRPC_ADDR) as channel:
+            stub = verification_pb2_grpc.VerificationServiceStub(channel)
+            response = await stub.GetCharityScore(
+                verification_pb2.CharityScoreRequest(charity_id=charity_id)
+            )
+        return response.score
+    except Exception as exc:
+        logger.warning(
+            "GetCharityScore failed for charity_id=%s (fail-open → score=0): %s",
+            charity_id, exc,
+        )
+        return 0

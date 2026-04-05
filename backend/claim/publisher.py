@@ -99,3 +99,39 @@ async def publish_waitlist_promoted(claim_id: int, listing_id: int, charity_id: 
         ),
     }
     await _publish("claim.waitlist.promoted", payload)
+
+
+async def publish_waitlist_offered(listing_id: int, charity_id: int) -> None:
+    """
+    Fired when a charity is ranked 1st and offered a slot in the queue.
+
+    Notification Service sends a pop-up to the charity:
+      "A listing is available for you! Accept or decline in the app."
+
+    The charity must call POST /claims/{listing_id}/waitlist/accept (or /decline) to respond.
+    """
+    payload = {
+        "event": "claim.waitlist.offered",
+        "listing_id": listing_id,
+        "charity_id": charity_id,
+        "accept_url": f"/claims/{listing_id}/waitlist/accept",
+        "decline_url": f"/claims/{listing_id}/waitlist/decline",
+        "message": (
+            "You've been offered a listing slot! "
+            "Accept or decline via the app to confirm."
+        ),
+    }
+    await _publish("claim.waitlist.offered", payload)
+
+
+async def publish_waitlist_cancelled(listing_id: int) -> None:
+    """
+    Fired when an item is sold and all remaining queue members are cancelled.
+    Notification Service sends a message to all affected charities.
+    """
+    payload = {
+        "event": "claim.waitlist.cancelled",
+        "listing_id": listing_id,
+        "message": "The listing you were waiting for has been collected. Queue is now closed.",
+    }
+    await _publish("claim.waitlist.cancelled", payload)

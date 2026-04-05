@@ -51,6 +51,20 @@ async def rollback_listing_to_available(listing_id: int, expected_version: int) 
     return response.new_version
 
 
+async def get_listing(listing_id: int):
+    """
+    Calls GetListing RPC on Inventory.
+    Returns a GetListingResponse with fields: listing_id, version, status, listed_at (ISO-8601 UTC).
+    Raises grpc.aio.AioRpcError on failure (NOT_FOUND, etc.).
+    """
+    async with grpc.aio.insecure_channel(INVENTORY_GRPC_ADDR) as channel:
+        stub = inventory_pb2_grpc.InventoryServiceStub(channel)
+        response = await stub.GetListing(
+            inventory_pb2.GetListingRequest(listing_id=listing_id)
+        )
+    return response
+
+
 async def mark_listing_sold(listing_id: int, expected_version: int) -> int:
     """
     Finalize listing collection by transitioning PENDING_COLLECTION -> SOLD.

@@ -52,6 +52,7 @@ class WaitlistListEntry(BaseModel):
     listing_id: int
     charity_id: int
     position: int
+    status: str  # QUEUING (in window) or WAITING (post-window)
 
 
 # ── Cancel claim schema ────────────────────────────────────────────────────────

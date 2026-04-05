@@ -552,6 +552,61 @@ class VerificationServicer(verification_pb2_grpc.VerificationServiceServicer):
             license_expires_at=expires_str,
         )
 
+    # ── 7. Get charity score for queue ranking ────────────────────────────────
+
+    async def GetCharityScore(
+        self,
+        request: verification_pb2.CharityScoreRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> verification_pb2.CharityScoreResponse:
+        charity_id = request.charity_id
+
+        if charity_id <= 0:
+            await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "charity_id must be > 0")
+            return verification_pb2.CharityScoreResponse()
+
+        logger.info("GetCharityScore: charity_id=%s", charity_id)
+
+        try:
+            async with AsyncSessionLocal() as db:
+                # Count today's non-cancelled claims (fairness: deprioritise charities who
+                # already received food today; 5 claims/day is the max enforced by VerifyCharity)
+                completed_result = await db.execute(
+                    select(func.count(CharityClaim.id)).where(
+                        CharityClaim.charity_id == charity_id,
+                        CharityClaim.created_at >= today_start(),
+                        CharityClaim.is_cancelled == False,
+                    )
+                )
+                today_completed = completed_result.scalar() or 0
+
+                noshow_result = await db.execute(
+                    select(func.count(CharityNoShow.id)).where(
+                        CharityNoShow.charity_id == charity_id
+                    )
+                )
+                noshow_count = noshow_result.scalar() or 0
+
+        except Exception as exc:
+            logger.exception("Unexpected error in GetCharityScore charity_id=%s: %s", charity_id, exc)
+            await context.abort(grpc.StatusCode.INTERNAL, "Internal verification error")
+            return verification_pb2.CharityScoreResponse()
+
+        # Higher score = higher queue priority.
+        # Penalty for claims already made today (-1 per claim): charities who haven't gotten
+        # food yet rank above those who have.
+        # Penalty for lifetime no-shows (-2 each): unreliable charities rank lower.
+        score = -today_completed - (noshow_count * 2)
+        logger.info(
+            "GetCharityScore: charity_id=%s today_completed=%s noshows=%s score=%s",
+            charity_id, today_completed, noshow_count, score,
+        )
+        return verification_pb2.CharityScoreResponse(
+            completed_claims=today_completed,
+            noshow_count=noshow_count,
+            score=score,
+        )
+
 
 # ── Server factory ────────────────────────────────────────────────────────────
 

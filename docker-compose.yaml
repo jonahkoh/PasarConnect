@@ -148,7 +148,10 @@ services:
       VERIFICATION_GRPC_PORT:  ${VERIFICATION_GRPC_PORT}
       PUBLIC_KEY_PATH:         ${PUBLIC_KEY_PATH}
       WAITLIST_SERVICE_URL:    http://waitlist-service:8010
+      WAITLIST_GRPC_HOST:      waitlist-service
+      WAITLIST_GRPC_PORT:      50053
       CANCEL_WINDOW_MINUTES:   ${CANCEL_WINDOW_MINUTES:-15}
+      QUEUE_WINDOW_MINUTES:    ${QUEUE_WINDOW_MINUTES:-5}
     volumes:
       - ./keys:/app/keys:ro
     depends_on:
@@ -169,12 +172,14 @@ services:
       dockerfile: waitlist/Dockerfile
     ports:
       - "8010:8010"
+      - "50053:50053"  # gRPC
     environment:
-      DB_HOST:     ${WAITLIST_DB_HOST:-waitlist-db}
-      DB_PORT:     ${WAITLIST_DB_PORT:-5432}
-      DB_USER:     ${POSTGRES_USER}
-      DB_PASSWORD: ${POSTGRES_PASSWORD}
-      DB_NAME:     ${WAITLIST_DB_NAME:-waitlist_db}
+      DB_HOST:             ${WAITLIST_DB_HOST:-waitlist-db}
+      DB_PORT:             ${WAITLIST_DB_PORT:-5432}
+      DB_USER:             ${POSTGRES_USER}
+      DB_PASSWORD:         ${POSTGRES_PASSWORD}
+      DB_NAME:             ${WAITLIST_DB_NAME:-waitlist_db}
+      WAITLIST_GRPC_PORT:  50053
     depends_on:
       waitlist-db:
         condition: service_healthy

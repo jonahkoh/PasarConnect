@@ -25,7 +25,8 @@ RUN python -m grpc_tools.protoc \
     --grpc_python_out=. \
     ./proto/inventory.proto \
     ./proto/claim_log.proto \
-    ./proto/verification.proto
+    ./proto/verification.proto \
+    ./proto/waitlist.proto
     
 EXPOSE 8002
 

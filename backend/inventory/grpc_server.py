@@ -79,6 +79,27 @@ class InventoryServicer(inventory_pb2_grpc.InventoryServiceServicer):
 
             return inventory_pb2.CreateListingResponse(success=True, listing_id=record.id)
 
+    async def GetListing(self, request, context):
+        if request.listing_id <= 0:
+            await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "listing_id must be > 0")
+            return inventory_pb2.GetListingResponse()
+
+        async with SessionLocal() as db:
+            record = await db.get(FoodListing, request.listing_id)
+            if record is None:
+                await context.abort(
+                    grpc.StatusCode.NOT_FOUND,
+                    f"Listing {request.listing_id} not found",
+                )
+                return inventory_pb2.GetListingResponse()
+
+            return inventory_pb2.GetListingResponse(
+                listing_id=record.id,
+                version=record.version,
+                status=record.status.value,
+                listed_at=record.created_at.isoformat() if record.created_at else "",
+            )
+
     async def LockListing(self, request, context):
         new_status = _STATUS_MAP.get(request.new_status)
         if new_status is None:

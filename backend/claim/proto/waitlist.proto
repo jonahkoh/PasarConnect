@@ -1,0 +1,122 @@
+syntax = "proto3";
+
+package waitlist;
+
+// ── Request messages ──────────────────────────────────────────────────────────
+
+message JoinRequest {
+  int32  listing_id = 1;
+  int32  charity_id = 2;
+  string status     = 3;  // "QUEUING" (during window) or "WAITING" (after window)
+}
+
+message GetEntriesRequest {
+  int32  listing_id = 1;
+  string status     = 2;  // "" = all statuses; "WAITING", "QUEUING", "OFFERED", etc.
+}
+
+message GetEntryRequest {
+  int32 listing_id = 1;
+  int32 charity_id = 2;
+}
+
+message LeaveRequest {
+  int32 listing_id = 1;
+  int32 charity_id = 2;
+}
+
+message UpdateStatusRequest {
+  int32  entry_id = 1;
+  string status   = 2;  // "OFFERED" | "CANCELLED" | "COLLECTED"
+}
+
+message UpdateCharityEntryRequest {
+  int32  listing_id = 1;
+  int32  charity_id = 2;
+  string status     = 3;  // e.g. "COLLECTED" when approve_claim runs
+}
+
+message CancelAllRequest {
+  int32 listing_id = 1;
+}
+
+message RankedEntry {
+  int32 entry_id = 1;
+  int32 rank     = 2;
+  int32 score    = 3;
+}
+
+message ResolveQueueRequest {
+  int32                listing_id = 1;
+  repeated RankedEntry entries    = 2;
+}
+
+// ── Response messages ─────────────────────────────────────────────────────────
+
+message PositionResponse {
+  int32 listing_id = 1;
+  int32 charity_id = 2;
+  int32 position   = 3;
+}
+
+message WaitlistEntryProto {
+  int32  id         = 1;
+  int32  listing_id = 2;
+  int32  charity_id = 3;
+  string joined_at  = 4;  // ISO 8601 string
+  string status     = 5;
+  int32  position   = 6;  // 1 = next in line (computed from ordering)
+  int32  rank       = 7;  // 0 = NULL (not yet ranked)
+  int32  score      = 8;  // 0 = NULL / unscored
+}
+
+message GetEntriesResponse {
+  repeated WaitlistEntryProto entries = 1;
+}
+
+message LeaveResponse {
+  bool cancelled = 1;
+}
+
+message UpdateStatusResponse {
+  int32  id     = 1;
+  string status = 2;
+}
+
+message CancelAllResponse {
+  int32 listing_id      = 1;
+  int32 cancelled_count = 2;
+}
+
+message ResolveQueueResponse {
+  int32 listing_id   = 1;
+  int32 ranked_count = 2;
+}
+
+// ── Service ───────────────────────────────────────────────────────────────────
+
+service WaitlistService {
+  // Charity joins the queue; returns their FIFO position
+  rpc JoinWaitlist (JoinRequest) returns (PositionResponse);
+
+  // Get all entries (or filter by status) for a listing
+  rpc GetEntries (GetEntriesRequest) returns (GetEntriesResponse);
+
+  // Get the single entry for a specific (listing, charity) pair
+  rpc GetEntry (GetEntryRequest) returns (WaitlistEntryProto);
+
+  // Charity voluntarily leaves the queue (cancels WAITING or QUEUING entry)
+  rpc LeaveWaitlist (LeaveRequest) returns (LeaveResponse);
+
+  // Update a specific entry's status by entry_id (e.g. OFFERED, CANCELLED)
+  rpc UpdateEntryStatus (UpdateStatusRequest) returns (UpdateStatusResponse);
+
+  // Update the entry for a (listing, charity) pair by those keys — used in approve_claim
+  rpc UpdateCharityEntry (UpdateCharityEntryRequest) returns (UpdateStatusResponse);
+
+  // Bulk-cancel all WAITING + QUEUING entries when a listing is SOLD
+  rpc CancelAllActive (CancelAllRequest) returns (CancelAllResponse);
+
+  // Bulk-set rank/score on QUEUING entries and flip them to WAITING
+  rpc ResolveQueue (ResolveQueueRequest) returns (ResolveQueueResponse);
+}

@@ -11,6 +11,19 @@ package inventory;
 
 service InventoryService {
   rpc LockListing (LockListingRequest) returns (LockListingResponse);
+  // Fetch a listing's current state — used to determine queue window age
+  rpc GetListing  (GetListingRequest)  returns (GetListingResponse);
+}
+
+message GetListingRequest {
+  int32 listing_id = 1;
+}
+
+message GetListingResponse {
+  int32  listing_id = 1;
+  int32  version    = 2;
+  string status     = 3;  // AVAILABLE | PENDING_COLLECTION | etc.
+  string listed_at  = 4;  // ISO-8601 UTC — created_at of the listing row
 }
 
 // The four valid status transitions via gRPC.
