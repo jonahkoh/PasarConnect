@@ -24,16 +24,45 @@ VERIFICATION_GRPC_PORT = os.getenv("VERIFICATION_GRPC_PORT", "50052")
 
 # ── Schemas ───────────────────────────────────────────────────────────────────
 
-class CharityLoginRequest(BaseModel):
+# All three user types share the same login fields — email + password.
+class LoginRequest(BaseModel):
     email: str
     password: str
+
+
+# Backward-compat aliases so existing callers don't need renaming.
+CharityLoginRequest = LoginRequest
+VendorLoginRequest  = LoginRequest
+PublicLoginRequest  = LoginRequest
 
 
 class CharityLoginResponse(BaseModel):
     access_token: str           # RS256 JWT signed by OutSystems
     token_type: str = "bearer"
-    charity_id: int             # decoded from JWT 'sub' for client convenience
+    user_id: int                # decoded from JWT 'sub'
+    role: str                   # decoded from JWT 'role' claim — always "charity"
     status: dict[str, Any] | None = None  # CharityStanding from verification service
+
+
+class VendorLoginResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user_id: int                # decoded from JWT 'sub'
+    role: str                   # decoded from JWT 'role' claim — always "vendor"
+    status: dict[str, Any] | None = None  # VendorStanding from verification service
+
+
+class PublicLoginResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user_id: int                # decoded from JWT 'sub'
+    role: str                   # decoded from JWT 'role' claim — always "public"
+
+
+# Pydantic v2 + `from __future__ import annotations` defers annotation evaluation;
+# model_rebuild() forces resolution of `Any` in the dict[str, Any] fields.
+CharityLoginResponse.model_rebuild()
+VendorLoginResponse.model_rebuild()
 
 
 # ── App ───────────────────────────────────────────────────────────────────────
@@ -95,6 +124,86 @@ async def _get_charity_status_grpc(charity_id: int) -> dict[str, Any]:
         }
 
 
+async def _get_vendor_status_grpc(vendor_id: int) -> dict[str, Any]:
+    """
+    Calls GetVendorStatus on the verification gRPC service.
+    Returns a default 'compliant' dict on any failure so login is never blocked
+    by a verification service outage.
+    """
+    if MOCK_OUTSYSTEMS:
+        return {
+            "is_compliant":     True,
+            "compliance_flag":  "",
+            "license_expires_at": "",
+        }
+
+    try:
+        import verification_pb2
+        import verification_pb2_grpc
+
+        addr = f"{VERIFICATION_GRPC_HOST}:{VERIFICATION_GRPC_PORT}"
+        async with grpc.aio.insecure_channel(addr) as channel:
+            stub = verification_pb2_grpc.VerificationServiceStub(channel)
+            resp = await stub.GetVendorStatus(
+                verification_pb2.VendorStatusRequest(vendor_id=vendor_id)
+            )
+        return {
+            "is_compliant":       resp.is_compliant,
+            "compliance_flag":    resp.compliance_flag,
+            "license_expires_at": resp.license_expires_at or "",
+        }
+    except Exception as exc:
+        logger.warning("Could not fetch vendor status from verification service: %s", exc)
+        return {
+            "is_compliant":     True,
+            "compliance_flag":  "",
+            "license_expires_at": "",
+        }
+
+
+async def _outsystems_login(email: str, password: str) -> tuple[str, int, str]:
+    """
+    Shared helper: calls OutSystems /api/auth/login and returns (token, user_id, role).
+
+    Raises HTTPException on any failure so individual endpoints stay clean.
+    The 'role' value comes from the JWT payload — OutSystems sets it to
+    "charity", "vendor", or "public" based on the account type.
+    """
+    url = f"{OUTSYSTEMS_API_URL}/api/auth/login"
+    headers = {"X-API-Key": OUTSYSTEMS_API_KEY}
+    payload = {"Email": email, "Password": password}
+
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT_SECONDS) as client:
+            response = await client.post(url, json=payload, headers=headers)
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=503, detail="OutSystems login timed out")
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=503, detail=f"OutSystems unreachable: {exc}")
+
+    if response.status_code == 401:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    if response.status_code == 403:
+        # OutSystems returns 403 when the account is pending admin approval.
+        raise HTTPException(status_code=403, detail="Account pending approval")
+    if response.status_code != 200:
+        logger.error("OutSystems login failed HTTP %s for email=%s", response.status_code, email)
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    data = response.json()
+    # OutSystems REST actions use PascalCase field names.
+    token: str = data.get("AccessToken", "")
+    if not token:
+        raise HTTPException(status_code=502, detail="OutSystems did not return a token")
+
+    # Decode WITHOUT signature verification — we only need sub + role for the response.
+    # Full RS256 signature verification happens in shared/jwt_auth.py on every protected request.
+    decoded = pyjwt.decode(token, options={"verify_signature": False})
+    user_id = int(decoded.get("sub", 0))
+    role = decoded.get("role", "")
+    return token, user_id, role
+
+
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 @app.get("/health")
@@ -103,88 +212,61 @@ async def health():
 
 
 @app.post("/auth/charity/login", response_model=CharityLoginResponse)
-async def charity_login(body: CharityLoginRequest):
+async def charity_login(body: LoginRequest):
     """
-    Step 1 of the whole auth flow.
-
-    The charity's app/browser calls this endpoint with email + password.
-    This service forwards the credentials to OutSystems, which:
-      - Validates the charity account
-      - Signs a JWT with OutSystems' private key (RS256)
-      - Returns the signed JWT back
-
-    We decode the JWT (without verifying — we trust OutSystems here) only to
-    extract the charity_id from the 'sub' claim and then call the verification
-    service to enrich the response with the charity's current standing.
-
-    MOCK MODE (MOCK_OUTSYSTEMS=true):
-    Returns a hardcoded mock token for local dev without real OutSystems access.
+    Charity login — validates credentials via OutSystems, enriches response with
+    the charity's current standing (quota usage, bans, cooldowns) from the
+    Verification service.
     """
     if MOCK_OUTSYSTEMS:
-        logger.info("MOCK login for email=%s", body.email)
-        mock_token = "mock.jwt.token"
+        logger.info("MOCK charity login for email=%s", body.email)
         status = await _get_charity_status_grpc(charity_id=1)
         return CharityLoginResponse(
-            access_token=mock_token,
-            charity_id=1,
+            access_token="mock.charity.token",
+            user_id=1,
+            role="charity",
             status=status,
         )
 
-    # ── Real OutSystems call ───────────────────────────────────────────────────
-    # OutSystems exposes a REST login action that validates credentials and
-    # returns a signed JWT.  The exact endpoint path must match what your
-    # groupmate configured in the OutSystems module.
-    #
-    # CONFIRM with OutSystems groupmate:
-    #   - Exact URL path (currently /api/auth/login)
-    #   - Request field names (currently Email/Password — verify casing)
-    #   - Response field name for the JWT (currently "access")
-    url = f"{OUTSYSTEMS_API_URL}/api/auth/login"
-    headers = {"X-API-Key": OUTSYSTEMS_API_KEY}
-    # Field names must match OutSystems REST input parameter names exactly.
-    # OutSystems typically uses PascalCase for REST parameters — confirm with groupmate.
-    payload = {"Email": body.email, "Password": body.password}
+    token, user_id, role = await _outsystems_login(body.email, body.password)
+    status = await _get_charity_status_grpc(charity_id=user_id)
+    return CharityLoginResponse(access_token=token, user_id=user_id, role=role, status=status)
 
-    try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT_SECONDS) as client:
-            response = await client.post(url, json=payload, headers=headers)
 
-        if response.status_code != 200:
-            logger.error("OutSystems login failed HTTP %s for email=%s", response.status_code, body.email)
-            raise HTTPException(status_code=401, detail="Invalid credentials")
+@app.post("/auth/vendor/login", response_model=VendorLoginResponse)
+async def vendor_login(body: LoginRequest):
+    """
+    Vendor login — validates credentials via OutSystems, enriches response with
+    the vendor's NEA licence compliance status from the Verification service.
+    """
+    if MOCK_OUTSYSTEMS:
+        logger.info("MOCK vendor login for email=%s", body.email)
+        status = await _get_vendor_status_grpc(vendor_id=1)
+        return VendorLoginResponse(
+            access_token="mock.vendor.token",
+            user_id=1,
+            role="vendor",
+            status=status,
+        )
 
-        data = response.json()
-        # OutSystems returns the JWT under the "access" key.
-        # Confirm with the OutSystems groupmate if the key name changes.
-        token: str = data.get("access")
-        if not token:
-            raise HTTPException(status_code=502, detail="OutSystems did not return a token")
+    token, user_id, role = await _outsystems_login(body.email, body.password)
+    status = await _get_vendor_status_grpc(vendor_id=user_id)
+    return VendorLoginResponse(access_token=token, user_id=user_id, role=role, status=status)
 
-        # Decode WITHOUT verification — we just want the sub claim for the response.
-        # The real signature verification happens in shared/jwt_auth.py on every request.
-        decoded = pyjwt.decode(token, options={"verify_signature": False})
-        charity_id = int(decoded.get("sub", 0))
 
-        status = await _get_charity_status_grpc(charity_id=charity_id)
+@app.post("/auth/public/login", response_model=PublicLoginResponse)
+async def public_login(body: LoginRequest):
+    """
+    Public user login — validates credentials via OutSystems.
+    No status enrichment needed: public users have no quota or compliance checks.
+    """
+    if MOCK_OUTSYSTEMS:
+        logger.info("MOCK public login for email=%s", body.email)
+        return PublicLoginResponse(
+            access_token="mock.public.token",
+            user_id=1,
+            role="public",
+        )
 
-        return CharityLoginResponse(access_token=token, charity_id=charity_id, status=status)
-
-    except httpx.TimeoutException:
-        raise HTTPException(status_code=503, detail="OutSystems login timed out")
-    except httpx.HTTPError as exc:
-        raise HTTPException(status_code=503, detail=f"OutSystems unreachable: {exc}")
-
-        if not token:
-            raise HTTPException(status_code=502, detail="OutSystems did not return a token")
-
-        # Decode WITHOUT verification — we just want the sub claim for the response.
-        # The real signature verification happens in shared/jwt_auth.py on every request.
-        decoded = pyjwt.decode(token, options={"verify_signature": False})
-        charity_id = int(decoded.get("sub", 0))
-
-        return CharityLoginResponse(access_token=token, charity_id=charity_id)
-
-    except httpx.TimeoutException:
-        raise HTTPException(status_code=503, detail="OutSystems login timed out")
-    except httpx.HTTPError as exc:
-        raise HTTPException(status_code=503, detail=f"OutSystems unreachable: {exc}")
+    token, user_id, role = await _outsystems_login(body.email, body.password)
+    return PublicLoginResponse(access_token=token, user_id=user_id, role=role)
