@@ -41,6 +41,8 @@ async def payment_client():
     # Stub generated gRPC modules so tests do not require protoc output.
     sys.modules.setdefault("inventory_pb2", MagicMock())
     sys.modules.setdefault("inventory_pb2_grpc", MagicMock())
+    sys.modules.setdefault("verification_pb2", MagicMock())
+    sys.modules.setdefault("verification_pb2_grpc", MagicMock())
     if "payment_log_pb2" not in sys.modules:
         payment_log_pb2 = MagicMock()
         payment_log_pb2.PENDING = 1
@@ -71,9 +73,11 @@ async def payment_client():
 
     with (
         patch.object(payment_mod.inventory_client, "lock_listing_pending_payment", new_callable=AsyncMock) as mock_soft_lock,
+        patch.object(payment_mod.inventory_client, "get_listing", new_callable=AsyncMock) as mock_get_listing,
         patch.object(payment_mod.inventory_client, "mark_listing_sold", new_callable=AsyncMock) as mock_mark_sold,
-        patch.object(payment_mod.inventory_client, "mark_listing_pending_collection", new_callable=AsyncMock) as mock_mark_pending_collection,
+            patch.object(payment_mod.inventory_client, "mark_listing_sold_pending_collection", new_callable=AsyncMock) as mock_mark_pending_collection,
         patch.object(payment_mod.inventory_client, "rollback_listing_to_available", new_callable=AsyncMock) as mock_mark_available,
+        patch.object(payment_mod.verification_client, "verify_public_user", new_callable=AsyncMock) as mock_verify_user,
         patch.object(payment_mod.payment_log_client, "create_payment_log", new_callable=AsyncMock) as mock_create_payment_log,
         patch.object(payment_mod.payment_log_client, "get_payment_log", new_callable=AsyncMock) as mock_get_payment_log,
         patch.object(payment_mod.payment_log_client, "update_payment_status_with_version", new_callable=AsyncMock) as mock_update_payment_status,
@@ -82,9 +86,11 @@ async def payment_client():
         patch.object(payment_mod, "_post", new_callable=AsyncMock) as mock_post,
     ):
         mock_soft_lock.return_value = 7
+        mock_get_listing.return_value = SimpleNamespace(listed_at="")  # empty = window inactive
         mock_mark_sold.return_value = 10
         mock_mark_pending_collection.return_value = 9
         mock_mark_available.return_value = 8
+        mock_verify_user.return_value = None  # eligible by default
 
         async def _post_side_effect(_client, url, _body):
             if url.endswith("/stripe/intent"):
@@ -104,6 +110,8 @@ async def payment_client():
             listing_id=222,
             listing_version=5,
             amount=42.5,
+            updated_at=None,
+            created_at="2024-01-01T00:00:00+00:00",
         )
 
         client = AsyncClient(
@@ -114,6 +122,8 @@ async def payment_client():
             yield {
                 "client": client,
                 "mock_soft_lock": mock_soft_lock,
+                "mock_get_listing": mock_get_listing,
+                "mock_verify_user": mock_verify_user,
                 "mock_mark_sold": mock_mark_sold,
                 "mock_mark_pending_collection": mock_mark_pending_collection,
                 "mock_mark_available": mock_mark_available,
@@ -137,12 +147,14 @@ async def test_health(payment_client):
 
 @pytest.mark.asyncio
 async def test_create_payment_intent_success(payment_client):
-    payload = {"listing_id": 101, "listing_version": 3, "amount": 20.5}
+    payload = {"user_id": 99, "listing_id": 101, "listing_version": 3, "amount": 20.5}
 
     response = await payment_client["client"].post("/payments/intent", json=payload)
 
     assert response.status_code == 201
     assert response.json() == {"client_secret": "pi_mock_123_secret"}
+    payment_client["mock_verify_user"].assert_called_once_with(99, 101)
+    payment_client["mock_get_listing"].assert_called_once_with(101)
     payment_client["mock_soft_lock"].assert_called_once_with(101, 3)
     payment_client["mock_post"].assert_called_once()
     payment_client["mock_create_payment_log"].assert_called_once_with(
@@ -150,7 +162,27 @@ async def test_create_payment_intent_success(payment_client):
         listing_id=101,
         listing_version=7,
         amount=20.5,
+        user_id=99,
     )
+
+
+@pytest.mark.asyncio
+async def test_create_payment_intent_blocked_during_queue_window(payment_client):
+    """Queue window active → 409 queue_window_active (public purchase blocked)."""
+    import datetime as _dt
+    # Simulate listing created 5 seconds ago; QUEUE_WINDOW default (5 min) still open
+    recent = (_dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(seconds=5)).isoformat()
+    payment_client["mock_get_listing"].return_value = SimpleNamespace(listed_at=recent)
+
+    payload = {"user_id": 99, "listing_id": 101, "listing_version": 3, "amount": 20.5}
+    response = await payment_client["client"].post("/payments/intent", json=payload)
+
+    assert response.status_code == 409
+    detail = response.json()["detail"]
+    assert detail["error"] == "queue_window_active"
+    assert "window_closes_at" in detail
+    # Inventory must NOT have been locked during the window
+    payment_client["mock_soft_lock"].assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -177,6 +209,7 @@ async def test_webhook_already_processed(payment_client):
 async def test_webhook_success_path(payment_client):
     payment_client["mock_get_payment_log"].return_value = SimpleNamespace(
         status=1,
+        listing_id=202,
         listing_version=9,
         amount=30.0,
     )
@@ -206,6 +239,7 @@ async def test_webhook_success_path(payment_client):
 async def test_webhook_grpc_failure_triggers_refund_and_failure_event(payment_client):
     payment_client["mock_get_payment_log"].return_value = SimpleNamespace(
         status=1,
+        listing_id=303,
         listing_version=2,
         amount=45.0,
     )
