@@ -68,3 +68,13 @@ async def mark_listing_sold(listing_id: int, expected_version: int) -> int:
 async def rollback_listing_to_available(listing_id: int, expected_version: int) -> int:
     """Transitions PENDING_PAYMENT → AVAILABLE.  Used when a payment is cancelled."""
     return await _lock_listing(listing_id, expected_version, inventory_pb2.AVAILABLE)
+
+
+async def get_listing(listing_id: int):
+    """Fetch a listing's current state (version, status, listed_at). Used for queue-window check."""
+    async with grpc.aio.insecure_channel(INVENTORY_GRPC_ADDR) as channel:
+        stub = inventory_pb2_grpc.InventoryServiceStub(channel)
+        return await stub.GetListing(
+            inventory_pb2.GetListingRequest(listing_id=listing_id),
+            timeout=5.0,
+        )

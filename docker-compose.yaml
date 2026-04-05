@@ -119,11 +119,12 @@ services:
     ports:
       - "8008:8008"
     environment:
-      INVENTORY_GRPC_HOST: ${INVENTORY_GRPC_HOST}
-      INVENTORY_GRPC_PORT: ${INVENTORY_GRPC_PORT}
-      RABBITMQ_HOST:       ${RABBITMQ_HOST}
-      RABBITMQ_USER:       ${RABBITMQ_USER}
-      RABBITMQ_PASS:       ${RABBITMQ_PASS}
+      INVENTORY_GRPC_HOST:  ${INVENTORY_GRPC_HOST}
+      INVENTORY_GRPC_PORT:  ${INVENTORY_GRPC_PORT}
+      RABBITMQ_HOST:        ${RABBITMQ_HOST}
+      RABBITMQ_USER:        ${RABBITMQ_USER}
+      RABBITMQ_PASS:        ${RABBITMQ_PASS}
+      QUEUE_WINDOW_MINUTES: ${QUEUE_WINDOW_MINUTES:-5}
     depends_on:
       rabbitmq:
         condition: service_started
@@ -256,6 +257,7 @@ services:
       PAYMENT_LOG_GRPC_PORT:    ${PAYMENT_LOG_GRPC_PORT}
       VERIFICATION_GRPC_HOST:   ${VERIFICATION_GRPC_HOST}
       VERIFICATION_GRPC_PORT:   ${VERIFICATION_GRPC_PORT}
+      QUEUE_WINDOW_MINUTES:     ${QUEUE_WINDOW_MINUTES:-5}
     depends_on:
       rabbitmq:
         condition: service_started

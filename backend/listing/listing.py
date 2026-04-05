@@ -21,7 +21,9 @@ EVENT_EXCHANGE = "pasarconnect.events"
 EVENT_ROUTING_KEY = "listing.created"
 ERROR_ROUTING_KEY = "listing.error"    # published when listing creation partially fails
 DELAY_QUEUE = "listing.delay.3m"       # renamed from .30m to avoid RabbitMQ arg-change error
-DELAY_TTL_MS = 3 * 60 * 1000           # 3 minutes (testing); change to 30 * 60 * 1000 in prod
+# TTL derived from the same env var as Claim/Payment Services so all three stay in sync.
+_QUEUE_WINDOW_MINUTES = float(os.getenv("QUEUE_WINDOW_MINUTES", "5"))
+DELAY_TTL_MS = int(_QUEUE_WINDOW_MINUTES * 60 * 1000)
 DLX_EXCHANGE = "pasarconnect.dlx"      # dead-letter exchange — receives messages after TTL
 DLX_ROUTING_KEY = "listing.window.closed"  # key used when delay queue dead-letters a message
 

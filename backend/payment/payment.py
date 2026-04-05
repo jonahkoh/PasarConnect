@@ -40,6 +40,7 @@ Workflow 2 — Webhook Fulfillment (POST /webhooks/stripe)
 import logging
 import os
 import datetime
+from datetime import timedelta
 from contextlib import asynccontextmanager
 
 import grpc
@@ -63,6 +64,10 @@ logger = logging.getLogger(__name__)
 
 # ── Internal service URLs (injected via env vars in Docker) ───────────────────
 STRIPE_WRAPPER_URL = os.getenv("STRIPE_WRAPPER_URL", "http://localhost:8004")
+
+# Mirrors the same env var used by the Claim Service — must stay in sync.
+QUEUE_WINDOW_MINUTES = float(os.getenv("QUEUE_WINDOW_MINUTES", "5"))
+QUEUE_WINDOW = timedelta(minutes=QUEUE_WINDOW_MINUTES)
 
 
 @asynccontextmanager
@@ -150,6 +155,30 @@ async def create_payment_intent(payload: PaymentIntentRequest):
         await verification_client.verify_public_user(payload.user_id, payload.listing_id)
     except UserNotEligibleError as exc:
         raise HTTPException(status_code=403, detail=f"User ineligible: {exc.reason}")
+
+    # Step 0b — Block purchase while the charity queue window is active
+    try:
+        listing_info = await inventory_client.get_listing(payload.listing_id)
+        listed_at_str = listing_info.listed_at
+        if listed_at_str:
+            listed_at = datetime.datetime.fromisoformat(listed_at_str)
+            if listed_at.tzinfo is None:
+                listed_at = listed_at.replace(tzinfo=datetime.timezone.utc)
+            window_closes_at = listed_at + QUEUE_WINDOW
+            if datetime.datetime.now(tz=datetime.timezone.utc) < window_closes_at:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "error": "queue_window_active",
+                        "message": "This listing is reserved for charities during the queue window.",
+                        "window_closes_at": window_closes_at.isoformat(),
+                    },
+                )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        # Fail-open: if inventory is unreachable here, let the lock attempt in Step 1 fail properly
+        logger.warning("Queue-window pre-check failed for listing %s (fail-open): %s", payload.listing_id, exc)
 
     # Step 1 — Soft lock in Inventory
     # If the listing is already taken, gRPC returns ABORTED (version mismatch)
