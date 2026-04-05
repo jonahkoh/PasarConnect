@@ -20,7 +20,7 @@ RABBITMQ_PASS = os.getenv("RABBITMQ_PASS", "guest")
 EVENT_EXCHANGE = "pasarconnect.events"
 EVENT_ROUTING_KEY = "listing.created"
 ERROR_ROUTING_KEY = "listing.error"    # published when listing creation partially fails
-DELAY_QUEUE = "listing.delay.3m"       # renamed from .30m to avoid RabbitMQ arg-change error
+DELAY_QUEUE = "listing.delay.window"    # name is TTL-agnostic; actual TTL driven by QUEUE_WINDOW_MINUTES
 # TTL derived from the same env var as Claim/Payment Services so all three stay in sync.
 _QUEUE_WINDOW_MINUTES = float(os.getenv("QUEUE_WINDOW_MINUTES", "5"))
 DELAY_TTL_MS = int(_QUEUE_WINDOW_MINUTES * 60 * 1000)

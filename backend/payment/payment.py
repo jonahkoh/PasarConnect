@@ -86,8 +86,8 @@ async def health_check():
 
 # ── Helper: call an internal service and surface errors cleanly ───────────────
 
-CANCELLATION_WINDOW_MINUTES = 1    # TESTING: set to 1 min (production intent: 10 mins)
-VENDOR_WARNING_MINUTES      = 1    # TESTING: set to 1 min (production intent: 30 mins)
+CANCELLATION_WINDOW_MINUTES = float(os.getenv("CANCELLATION_WINDOW_MINUTES", "1"))  # production intent: 10 mins
+VENDOR_WARNING_MINUTES      = float(os.getenv("VENDOR_WARNING_MINUTES",      "1"))  # production intent: 30 mins
 
 
 def _minutes_since_payment(log) -> float:
