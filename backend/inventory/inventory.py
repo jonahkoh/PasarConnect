@@ -16,6 +16,26 @@ from schemas import FoodListingCreate, FoodListingUpdate, FoodListingResponse
 # Precision 6 ≈ 1.2 km cell size — matches the default 5 km search radius.
 GEOHASH_STORE_PRECISION = 6
 
+
+def _geohash_neighbors(geohash_str: str) -> set:
+    """Return the 8 geohash cells surrounding *geohash_str* at the same precision.
+
+    geohash2 v1.1 exposes only encode/decode/decode_exactly — no neighbors().
+    We compute cells manually: shift ±2*half_width along each axis and re-encode.
+    """
+    precision = len(geohash_str)
+    lat, lon, lat_err, lon_err = geohash2.decode_exactly(geohash_str)
+    neighbors: set = set()
+    for dlat in (-1, 0, 1):
+        for dlon in (-1, 0, 1):
+            if dlat == 0 and dlon == 0:
+                continue  # skip center
+            nlat = max(-90.0, min(90.0, lat + dlat * 2 * lat_err))
+            nlon = ((lon + dlon * 2 * lon_err) + 180) % 360 - 180
+            neighbors.add(geohash2.encode(nlat, nlon, precision=precision))
+    return neighbors
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Auto-create tables on startup
@@ -85,29 +105,28 @@ async def search_nearby_listings(
     - 5 km: Regional search (default)
     - 10+ km: Larger area search
     """
-    # Calculate geohash precision based on radius
-    # Higher radius = lower precision = larger area
-    if radius_km >= 10:
-        precision = 5  # ~4.8 km
-    elif radius_km >= 5:
-        precision = 6  # ~1.2 km
-    elif radius_km >= 2:
-        precision = 7  # ~150 m
-    elif radius_km >= 0.5:
-        precision = 8  # ~20 m
-    else:
-        precision = 9  # ~2.4 m
+    # All listings are stored at GEOHASH_STORE_PRECISION (6, ~1.2 km cell).
+    # Searching must use the same precision — mixing precisions means the stored
+    # hash "w21z7h" would never match a precision-8 search hash "w21z7hxx".
+    # The 9-box at precision 6 covers ~3.6 × 2.4 km, sufficient for Singapore.
+    # For radius > 25 km we expand to a 5×5 box to avoid missing border listings.
+    precision = GEOHASH_STORE_PRECISION  # always 6
 
     center_geohash = geohash2.encode(latitude, longitude, precision=precision)
 
-    # Generate nearby geohashes (9-box: center + 8 neighbors)
-    try:
-        nearby_geohashes = geohash2.neighbors(center_geohash)
+    # 9-box (3×3) covers ~3.6 × 2.4 km; expand to 5×5 for large radii
+    if radius_km > 25:
+        # Two rings out: neighbors-of-neighbors (adds 16 more cells)
+        ring1 = _geohash_neighbors(center_geohash)
+        ring2: set[str] = set()
+        for h in ring1:
+            ring2.update(_geohash_neighbors(h))
+        nearby_geohashes = ring1 | ring2 | {center_geohash}
+    else:
+        nearby_geohashes = _geohash_neighbors(center_geohash)
         nearby_geohashes.add(center_geohash)
-        nearby_geohashes_list = list(nearby_geohashes)
-    except Exception:
-        # Fallback: just use center geohash if neighbors fail
-        nearby_geohashes_list = [center_geohash]
+
+    nearby_geohashes_list = list(nearby_geohashes)
 
     # Query listings with matching geohashes
     result = await db.execute(

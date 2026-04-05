@@ -19,6 +19,7 @@ RABBITMQ_PASS = os.getenv("RABBITMQ_PASS", "guest")
 
 EVENT_EXCHANGE = "pasarconnect.events"
 EVENT_ROUTING_KEY = "listing.created"
+ERROR_ROUTING_KEY = "listing.error"    # published when listing creation partially fails
 DELAY_QUEUE = "listing.delay.3m"       # renamed from .30m to avoid RabbitMQ arg-change error
 DELAY_TTL_MS = 3 * 60 * 1000           # 3 minutes (testing); change to 30 * 60 * 1000 in prod
 DLX_EXCHANGE = "pasarconnect.dlx"      # dead-letter exchange — receives messages after TTL
@@ -93,6 +94,32 @@ async def health_check():
     return {"status": "healthy", "service": "listing"}
 
 
+async def _publish_error_event(error_type: str, detail: str, listing_id: int | None = None) -> None:
+    """
+    Publish a listing.error event to pasarconnect.events so the notification
+    service /debug/messages endpoint captures failures for easier debugging.
+    Best-effort: silently skips if the MQ channel is not available.
+    """
+    if _mq_exchange is None:
+        return
+    try:
+        payload = {"event": "listing.error", "error_type": error_type, "detail": detail}
+        if listing_id is not None:
+            payload["listing_id"] = listing_id
+        await _mq_exchange.publish(
+            aio_pika.Message(
+                body=json.dumps(payload).encode("utf-8"),
+                content_type="application/json",
+                delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
+            ),
+            routing_key=ERROR_ROUTING_KEY,
+        )
+    except Exception as exc:
+        # Log only — never let error reporting break the response
+        import logging
+        logging.getLogger(__name__).warning("Failed to publish error event: %s", exc)
+
+
 async def _publish_created_events(listing_id: int) -> None:
     message_payload = {
         "event": "listing.created",
@@ -117,6 +144,10 @@ async def create_listing(payload: ListingCreateRequest):
     try:
         listing_id = await inventory_client.create_listing(payload.model_dump(mode="json"))
     except inventory_client.InventoryServiceError as exc:
+        await _publish_error_event(
+            error_type="inventory_unavailable",
+            detail=str(exc),
+        )
         raise HTTPException(status_code=exc.status_code, detail=str(exc))
 
     # Fetch listed_at so callers know exactly when the queue window started.
@@ -128,7 +159,12 @@ async def create_listing(payload: ListingCreateRequest):
 
     try:
         await _publish_created_events(listing_id)
-    except Exception:
+    except Exception as exc:
+        await _publish_error_event(
+            error_type="mq_publish_failed",
+            detail=str(exc),
+            listing_id=listing_id,
+        )
         raise HTTPException(status_code=503, detail="RabbitMQ publish failed")
 
     return {"listing_id": listing_id, "listed_at": listed_at}

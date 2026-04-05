@@ -29,6 +29,7 @@ const EVENT_EXCHANGE  = "pasarconnect.events";
 const DLX_EXCHANGE    = "pasarconnect.dlx";
 const CREATED_QUEUE   = "notification.listing.created";
 const WINDOW_QUEUE    = "notification.listing.window.closed";
+const ERROR_QUEUE     = "notification.listing.error";
 
 // ── In-memory ring buffer ─────────────────────────────────────────────────────
 const MAX_MESSAGES = 100;
@@ -103,7 +104,22 @@ async function startConsumer() {
     ch.ack(msg);
   });
 
-  console.log(`Listening on: ${CREATED_QUEUE}, ${WINDOW_QUEUE}`);
+  // Queue 3: listing.error — fired by listing-service on inventory/MQ failures
+  await ch.assertQueue(ERROR_QUEUE, { durable: true });
+  await ch.bindQueue(ERROR_QUEUE, EVENT_EXCHANGE, "listing.error");
+  ch.consume(ERROR_QUEUE, msg => {
+    if (!msg) return;
+    try {
+      const payload = JSON.parse(msg.content.toString());
+      storeMessage("listing.error", payload);
+      console.error("[listing.error]", JSON.stringify(payload));
+    } catch {
+      console.error("Failed to parse listing.error message");
+    }
+    ch.ack(msg);
+  });
+
+  console.log(`Listening on: ${CREATED_QUEUE}, ${WINDOW_QUEUE}, ${ERROR_QUEUE}`);
 }
 
 // ── HTTP server ───────────────────────────────────────────────────────────────
