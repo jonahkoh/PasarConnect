@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 from typing import List
+
 from fastapi import Depends, FastAPI, HTTPException, Path, Query
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,23 +13,28 @@ from grpc_server import start_grpc_server
 from models import FoodListing, ListingStatus
 from schemas import FoodListingCreate, FoodListingUpdate, FoodListingResponse
 
+GEOHASH_PRECISION = 6  # ~1.2 km cell size
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Auto-create tables on startup
     async with database.engine.begin() as conn:
-        await conn.execute(
-            text(
-                """
-                DO $$
-                BEGIN
-                    IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'listing_status_enum') THEN
-                        ALTER TYPE listing_status_enum ADD VALUE IF NOT EXISTS 'SOLD_PENDING_COLLECTION';
-                    END IF;
-                END
-                $$;
-                """
+        if not database.USE_SQLITE:
+            # PostgreSQL-only migration — skipped on SQLite (local dev / tests)
+            await conn.execute(
+                text(
+                    """
+                    DO $$
+                    BEGIN
+                        IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'listing_status_enum') THEN
+                            ALTER TYPE listing_status_enum ADD VALUE IF NOT EXISTS 'SOLD_PENDING_COLLECTION';
+                        END IF;
+                    END
+                    $$;
+                    """
+                )
             )
-        )
         await conn.run_sync(Base.metadata.create_all)
 
     # Start the gRPC server alongside the HTTP server (same process, same event loop)
@@ -51,7 +57,45 @@ async def health_check():
 
 @app.get("/listings", response_model=List[FoodListingResponse])
 async def get_all_listings(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(FoodListing).order_by(FoodListing.created_at.desc()))
+    result = await db.execute(
+        select(FoodListing).order_by(FoodListing.created_at.desc(), FoodListing.id.desc())
+    )
+    return result.scalars().all()
+
+
+@app.get("/listings/search/nearby", response_model=List[FoodListingResponse])
+async def search_nearby_listings(
+    latitude: float = Query(..., ge=-90, le=90, description="Latitude of search center"),
+    longitude: float = Query(..., ge=-180, le=180, description="Longitude of search center"),
+    radius_km: float = Query(5.0, ge=0.1, le=100, description="Search radius in kilometers"),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Search for listings near a geographic location using geohashing.
+
+    Recommended radiuses:
+    - 0.5 km: Very local search (same street/block)
+    - 1 km: Neighborhood search
+    - 5 km: Regional search (default)
+    - 10+ km: Larger area search
+    """
+    center_geohash = geohash2.encode(latitude, longitude, precision=GEOHASH_PRECISION)
+
+    # Generate nearby geohashes (9-box: center + 8 neighbors)
+    try:
+        nearby_geohashes = geohash2.neighbors(center_geohash)
+        nearby_geohashes.add(center_geohash)
+        nearby_geohashes_list = list(nearby_geohashes)
+    except Exception:
+        nearby_geohashes_list = [center_geohash]
+
+    result = await db.execute(
+        select(FoodListing)
+        .where(FoodListing.geohash.in_(nearby_geohashes_list))
+        .where(FoodListing.status == ListingStatus.AVAILABLE)
+        .order_by(FoodListing.created_at.desc(), FoodListing.id.desc())
+    )
+
     return result.scalars().all()
 
 
@@ -79,7 +123,7 @@ async def create_listing(
             lat, lng = await geocode_address(payload.address)
             new_listing.latitude = lat
             new_listing.longitude = lng
-            new_listing.geohash = geohash2.encode(lat, lng, precision=6)
+            new_listing.geohash = geohash2.encode(lat, lng, precision=GEOHASH_PRECISION)
         except GeocodingError as e:
             raise HTTPException(status_code=422, detail=str(e))
 
@@ -99,9 +143,11 @@ async def update_listing(
     listing = result.scalar_one_or_none()
     if listing is None:
         raise HTTPException(status_code=404, detail=f"Listing {listing_id} not found.")
-    
-    # Update only provided fields
+
     update_data = payload.model_dump(exclude_unset=True)
+    if not update_data:
+        return listing  # nothing to update — skip DB round-trip and version bump
+
     for field, value in update_data.items():
         setattr(listing, field, value)
 
@@ -111,10 +157,10 @@ async def update_listing(
             lat, lng = await geocode_address(payload.address)
             listing.latitude = lat
             listing.longitude = lng
-            listing.geohash = geohash2.encode(lat, lng, precision=6)
+            listing.geohash = geohash2.encode(lat, lng, precision=GEOHASH_PRECISION)
         except GeocodingError as e:
             raise HTTPException(status_code=422, detail=str(e))
-    
+
     listing.version += 1
     await db.commit()
     await db.refresh(listing)
@@ -130,60 +176,6 @@ async def delete_listing(
     listing = result.scalar_one_or_none()
     if listing is None:
         raise HTTPException(status_code=404, detail=f"Listing {listing_id} not found.")
-    
+
     await db.delete(listing)
     await db.commit()
-
-
-@app.get("/listings/search/nearby", response_model=List[FoodListingResponse])
-async def search_nearby_listings(
-    latitude: float = Query(..., ge=-90, le=90, description="Latitude of search center"),
-    longitude: float = Query(..., ge=-180, le=180, description="Longitude of search center"),
-    radius_km: float = Query(5.0, ge=0.1, le=100, description="Search radius in kilometers"),
-    db: AsyncSession = Depends(get_db),
-):
-    """
-    Search for listings near a geographic location using geohashing.
-    Works for any location worldwide.
-    
-    Recommended radiuses:
-    - 0.5 km: Very local search (same street/block)
-    - 1 km: Neighborhood search
-    - 2 km: District search
-    - 5 km: Regional search (default)
-    - 10+ km: Larger area search
-    """
-    # Calculate geohash precision based on radius
-    # Higher radius = lower precision = larger area
-    if radius_km >= 10:
-        precision = 5  # ~4.8 km
-    elif radius_km >= 5:
-        precision = 6  # ~1.2 km
-    elif radius_km >= 2:
-        precision = 7  # ~150 m
-    elif radius_km >= 0.5:
-        precision = 8  # ~20 m
-    else:
-        precision = 9  # ~2.4 m
-    
-    center_geohash = geohash2.encode(latitude, longitude, precision=precision)
-    
-    # Generate nearby geohashes (9-box: center + 8 neighbors)
-    try:
-        nearby_geohashes = geohash2.neighbors(center_geohash)
-        nearby_geohashes.add(center_geohash)
-        nearby_geohashes_list = list(nearby_geohashes)
-    except Exception:
-        # Fallback: just use center geohash if neighbors fail
-        nearby_geohashes_list = [center_geohash]
-    
-    # Query listings with matching geohashes
-    result = await db.execute(
-        select(FoodListing)
-        .where(FoodListing.geohash.in_(nearby_geohashes_list))
-        .where(FoodListing.status == ListingStatus.AVAILABLE)
-        .order_by(FoodListing.created_at.desc())
-    )
-    
-    return result.scalars().all()
-
