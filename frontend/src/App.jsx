@@ -1,7 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
-import { mockListings } from "./data/mockListings";
-import { mockPublicListings } from "./data/mockPublicListings";
 import { fetchListingById, fetchListings } from "./lib/inventoryApi";
 import { useSocket } from "./hooks/useSocket";
 import Toast from "./components/Toast";
@@ -30,8 +28,8 @@ function decrementQuantityLabel(label) {
 }
 
 export default function App() {
-  const [charityListings, setCharityListings] = useState(mockListings);
-  const [publicListings, setPublicListings] = useState(mockPublicListings);
+  const [charityListings, setCharityListings] = useState([]);
+  const [publicListings, setPublicListings] = useState([]);
 
   // Read auth token written by LoginPage into sessionStorage.
   // const is intentional: authUser never changes during a session.

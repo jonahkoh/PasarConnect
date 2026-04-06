@@ -53,7 +53,12 @@ export function useSocket(authUser) {
 
     s.on("connect_error", (err) => {
       const msg = err.message.toLowerCase();
-      if (msg.includes("expired") || msg.includes("authentication failed")) {
+      // Only redirect to login when the JWT itself has clearly expired.
+      // Do NOT redirect for service-down / network errors ("xhr poll error",
+      // "502 bad gateway", etc.) — those should fail the socket silently while
+      // leaving the REST API session intact.
+      const isJwtExpiry = msg.includes("expired");
+      if (isJwtExpiry) {
         s.disconnect();
         sessionStorage.clear();
         window.location.replace("/login");
