@@ -1,13 +1,14 @@
 """
-OutSystems Wrapper tests — all 3 login endpoints in MOCK mode.
+OutSystems Wrapper tests — all endpoints in MOCK mode.
 
 MOCK_OUTSYSTEMS=true is set before the module loads so no real OutSystems or
 gRPC calls are made. This covers:
   - /health
-  - POST /auth/charity/login
-  - POST /auth/vendor/login
-  - POST /auth/public/login
-  - 400 validation when required fields are missing
+  - POST /auth/charity/login, /auth/vendor/login, /auth/public/login
+  - POST /auth/public/register, /auth/charity/register, /auth/vendor/register
+  - POST /admin/charity/approve, /admin/charity/reject
+  - POST /admin/vendor/approve, /admin/vendor/reject
+  - 422 validation when required fields are missing
 """
 
 import importlib.util as _ilu
@@ -46,6 +47,14 @@ async def wrapper_client():
 @pytest.mark.asyncio
 async def test_health(wrapper_client):
     response = await wrapper_client.get("/health")
+    assert response.status_code == 200
+    assert response.json() == {"status": "healthy", "service": "outsystems"}
+
+
+@pytest.mark.asyncio
+async def test_auth_health_alias(wrapper_client):
+    """Kong forwards /auth/health here with strip_path:false — the alias must respond."""
+    response = await wrapper_client.get("/auth/health")
     assert response.status_code == 200
     assert response.json() == {"status": "healthy", "service": "outsystems"}
 
@@ -120,4 +129,81 @@ async def test_public_login_mock_returns_correct_fields(wrapper_client):
 @pytest.mark.asyncio
 async def test_public_login_missing_fields_returns_422(wrapper_client):
     response = await wrapper_client.post("/auth/public/login", json={})
+    assert response.status_code == 422
+
+
+# ── Register endpoints ─────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_public_register_mock_returns_201(wrapper_client):
+    payload = {"FullName": "John Doe", "Email": "john@example.com", "Password": "pass", "Phone": "91234567"}
+    response = await wrapper_client.post("/auth/public/register", json=payload)
+    assert response.status_code == 201
+    assert "message" in response.json()
+
+
+@pytest.mark.asyncio
+async def test_charity_register_mock_returns_201(wrapper_client):
+    payload = {
+        "FullName": "Jane Doe", "Email": "charity@example.com", "Password": "pass",
+        "OrgName": "Food For All", "CharityRegNumber": "ROS1234567",
+    }
+    response = await wrapper_client.post("/auth/charity/register", json=payload)
+    assert response.status_code == 201
+    assert "message" in response.json()
+
+
+@pytest.mark.asyncio
+async def test_vendor_register_mock_returns_201(wrapper_client):
+    payload = {
+        "FullName": "Bob Smith", "Email": "vendor@example.com", "Password": "pass",
+        "BusinessName": "Bob's Bakery", "NeaLicenceNumber": "NEA123456",
+        "LicenceExpiry": "2027-01-01", "Address": "123 Orchard Road", "Uen": "UEN123456",
+    }
+    response = await wrapper_client.post("/auth/vendor/register", json=payload)
+    assert response.status_code == 201
+    assert "message" in response.json()
+
+
+@pytest.mark.asyncio
+async def test_public_register_missing_field_returns_422(wrapper_client):
+    # Missing Phone
+    payload = {"FullName": "John Doe", "Email": "john@example.com", "Password": "pass"}
+    response = await wrapper_client.post("/auth/public/register", json=payload)
+    assert response.status_code == 422
+
+
+# ── Admin endpoints ────────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_admin_approve_charity_mock(wrapper_client):
+    response = await wrapper_client.post("/admin/charity/approve", json={"UserId": 7, "RejectionReason": ""})
+    assert response.status_code == 200
+    assert "message" in response.json()
+
+
+@pytest.mark.asyncio
+async def test_admin_reject_charity_mock(wrapper_client):
+    response = await wrapper_client.post("/admin/charity/reject", json={"UserId": 7, "RejectionReason": "Invalid number"})
+    assert response.status_code == 200
+    assert "message" in response.json()
+
+
+@pytest.mark.asyncio
+async def test_admin_approve_vendor_mock(wrapper_client):
+    response = await wrapper_client.post("/admin/vendor/approve", json={"UserId": 8, "RejectionReason": ""})
+    assert response.status_code == 200
+    assert "message" in response.json()
+
+
+@pytest.mark.asyncio
+async def test_admin_reject_vendor_mock(wrapper_client):
+    response = await wrapper_client.post("/admin/vendor/reject", json={"UserId": 8, "RejectionReason": "NEA licence expired"})
+    assert response.status_code == 200
+    assert "message" in response.json()
+
+
+@pytest.mark.asyncio
+async def test_admin_action_missing_user_id_returns_422(wrapper_client):
+    response = await wrapper_client.post("/admin/charity/approve", json={"RejectionReason": ""})
     assert response.status_code == 422

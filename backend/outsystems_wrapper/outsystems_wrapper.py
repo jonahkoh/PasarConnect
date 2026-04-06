@@ -13,9 +13,11 @@ from pydantic import BaseModel
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# OutSystems login endpoint — returns a signed JWT on successful charity login
-OUTSYSTEMS_API_URL = os.getenv("OUTSYSTEMS_API_URL", "")
-OUTSYSTEMS_API_KEY = os.getenv("OUTSYSTEMS_API_KEY", "")
+# OUTSYSTEMS_API_URL  — UserAuth base (no API key required for public/login/register)
+# OUTSYSTEMS_ADMIN_URL — AdminAuth base (X-API-Key required for approve/reject)
+OUTSYSTEMS_API_URL   = os.getenv("OUTSYSTEMS_API_URL", "")
+OUTSYSTEMS_ADMIN_URL = os.getenv("OUTSYSTEMS_ADMIN_URL", "")
+OUTSYSTEMS_ADMIN_API_KEY = os.getenv("OUTSYSTEMS_ADMIN_API_KEY", "")
 _TIMEOUT_SECONDS = float(os.getenv("OUTSYSTEMS_TIMEOUT_SECONDS", "5.0"))
 MOCK_OUTSYSTEMS = os.getenv("MOCK_OUTSYSTEMS", "false").lower() == "true"
 
@@ -163,19 +165,15 @@ async def _get_vendor_status_grpc(vendor_id: int) -> dict[str, Any]:
 
 async def _outsystems_login(email: str, password: str) -> tuple[str, int, str]:
     """
-    Shared helper: calls OutSystems /api/auth/login and returns (token, user_id, role).
-
-    Raises HTTPException on any failure so individual endpoints stay clean.
-    The 'role' value comes from the JWT payload — OutSystems sets it to
-    "charity", "vendor", or "public" based on the account type.
+    Shared helper: calls OutSystems UserAuth /api/auth/login and returns (token, user_id, role).
+    UserAuth endpoints require no API key.
     """
     url = f"{OUTSYSTEMS_API_URL}/api/auth/login"
-    headers = {"X-API-Key": OUTSYSTEMS_API_KEY}
     payload = {"Email": email, "Password": password}
 
     try:
         async with httpx.AsyncClient(timeout=_TIMEOUT_SECONDS) as client:
-            response = await client.post(url, json=payload, headers=headers)
+            response = await client.post(url, json=payload)
     except httpx.TimeoutException:
         raise HTTPException(status_code=503, detail="OutSystems login timed out")
     except httpx.HTTPError as exc:
@@ -191,7 +189,6 @@ async def _outsystems_login(email: str, password: str) -> tuple[str, int, str]:
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     data = response.json()
-    # OutSystems REST actions use PascalCase field names.
     token: str = data.get("AccessToken", "")
     if not token:
         raise HTTPException(status_code=502, detail="OutSystems did not return a token")
@@ -204,9 +201,57 @@ async def _outsystems_login(email: str, password: str) -> tuple[str, int, str]:
     return token, user_id, role
 
 
+async def _outsystems_register(path: str, body: dict) -> dict:
+    """
+    Shared helper: forwards a registration payload to an OutSystems UserAuth endpoint.
+    UserAuth endpoints require no API key.
+    Returns the raw OutSystems response dict on success.
+    """
+    url = f"{OUTSYSTEMS_API_URL}{path}"
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT_SECONDS) as client:
+            response = await client.post(url, json=body)
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=503, detail="OutSystems registration timed out")
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=503, detail=f"OutSystems unreachable: {exc}")
+
+    if response.status_code not in (200, 201):
+        logger.error("OutSystems register failed HTTP %s path=%s", response.status_code, path)
+        raise HTTPException(status_code=response.status_code, detail=response.text or "Registration failed")
+
+    return response.json()
+
+
+async def _outsystems_admin_call(path: str, body: dict) -> dict:
+    """
+    Shared helper: forwards an admin action to OutSystems AdminAuth.
+    AdminAuth endpoints require the X-API-Key header.
+    Returns the raw OutSystems response dict on success.
+    """
+    url = f"{OUTSYSTEMS_ADMIN_URL}{path}"
+    headers = {"X-API-Key": OUTSYSTEMS_ADMIN_API_KEY}
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT_SECONDS) as client:
+            response = await client.post(url, json=body, headers=headers)
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=503, detail="OutSystems admin call timed out")
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=503, detail=f"OutSystems unreachable: {exc}")
+
+    if response.status_code == 401:
+        raise HTTPException(status_code=401, detail="Invalid or missing admin API key")
+    if response.status_code not in (200, 201):
+        logger.error("OutSystems admin call failed HTTP %s path=%s", response.status_code, path)
+        raise HTTPException(status_code=response.status_code, detail=response.text or "Admin action failed")
+
+    return response.json()
+
+
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 @app.get("/health")
+@app.get("/auth/health")   # Kong routes /auth/* with strip_path:false, so /auth/health arrives here as-is
 async def health():
     return {"status": "healthy", "service": "outsystems"}
 
@@ -270,3 +315,118 @@ async def public_login(body: LoginRequest):
 
     token, user_id, role = await _outsystems_login(body.email, body.password)
     return PublicLoginResponse(access_token=token, user_id=user_id, role=role)
+
+
+# ── Registration schemas ──────────────────────────────────────────────────────
+
+class PublicRegisterRequest(BaseModel):
+    FullName: str
+    Email: str
+    Password: str
+    Phone: str
+
+
+class CharityRegisterRequest(BaseModel):
+    FullName: str
+    Email: str
+    Password: str
+    OrgName: str
+    CharityRegNumber: str
+
+
+class VendorRegisterRequest(BaseModel):
+    FullName: str
+    Email: str
+    Password: str
+    BusinessName: str
+    NeaLicenceNumber: str
+    LicenceExpiry: str   # ISO date string e.g. "2027-01-01"
+    Address: str
+    Uen: str
+
+
+# ── Admin action schemas ──────────────────────────────────────────────────────
+
+class AdminActionRequest(BaseModel):
+    UserId: int
+    RejectionReason: str = ""
+
+
+# ── Registration endpoints (UserAuth — no API key) ────────────────────────────
+
+@app.post("/auth/public/register", status_code=201)
+async def public_register(body: PublicRegisterRequest):
+    """Forward public user registration to OutSystems UserAuth."""
+    if MOCK_OUTSYSTEMS:
+        logger.info("MOCK public register for email=%s", body.Email)
+        return {"message": "Registration successful. You can now log in."}
+
+    return await _outsystems_register("/api/auth/public/register", body.model_dump())
+
+
+@app.post("/auth/charity/register", status_code=201)
+async def charity_register(body: CharityRegisterRequest):
+    """
+    Forward charity registration to OutSystems UserAuth.
+    Account is created in pending state — admin must approve before login is allowed.
+    """
+    if MOCK_OUTSYSTEMS:
+        logger.info("MOCK charity register for email=%s", body.Email)
+        return {"message": "Registration submitted. Pending admin approval."}
+
+    return await _outsystems_register("/api/auth/charity/register", body.model_dump())
+
+
+@app.post("/auth/vendor/register", status_code=201)
+async def vendor_register(body: VendorRegisterRequest):
+    """
+    Forward vendor registration to OutSystems UserAuth.
+    Account is created in pending state — admin must approve before login is allowed.
+    """
+    if MOCK_OUTSYSTEMS:
+        logger.info("MOCK vendor register for email=%s", body.Email)
+        return {"message": "Registration submitted. Pending admin approval."}
+
+    return await _outsystems_register("/api/auth/vendor/register", body.model_dump())
+
+
+# ── Admin endpoints (AdminAuth — X-API-Key required) ─────────────────────────
+
+@app.post("/admin/charity/approve")
+async def admin_approve_charity(body: AdminActionRequest):
+    """Approve a pending charity account. Requires OUTSYSTEMS_ADMIN_API_KEY."""
+    if MOCK_OUTSYSTEMS:
+        logger.info("MOCK approve charity UserId=%s", body.UserId)
+        return {"message": f"Charity {body.UserId} approved."}
+
+    return await _outsystems_admin_call("/api/admin/charity/approve", body.model_dump())
+
+
+@app.post("/admin/charity/reject")
+async def admin_reject_charity(body: AdminActionRequest):
+    """Reject a pending charity account. Requires OUTSYSTEMS_ADMIN_API_KEY."""
+    if MOCK_OUTSYSTEMS:
+        logger.info("MOCK reject charity UserId=%s reason=%s", body.UserId, body.RejectionReason)
+        return {"message": f"Charity {body.UserId} rejected."}
+
+    return await _outsystems_admin_call("/api/admin/charity/reject", body.model_dump())
+
+
+@app.post("/admin/vendor/approve")
+async def admin_approve_vendor(body: AdminActionRequest):
+    """Approve a pending vendor account. Requires OUTSYSTEMS_ADMIN_API_KEY."""
+    if MOCK_OUTSYSTEMS:
+        logger.info("MOCK approve vendor UserId=%s", body.UserId)
+        return {"message": f"Vendor {body.UserId} approved."}
+
+    return await _outsystems_admin_call("/api/admin/vendor/approve", body.model_dump())
+
+
+@app.post("/admin/vendor/reject")
+async def admin_reject_vendor(body: AdminActionRequest):
+    """Reject a pending vendor account. Requires OUTSYSTEMS_ADMIN_API_KEY."""
+    if MOCK_OUTSYSTEMS:
+        logger.info("MOCK reject vendor UserId=%s reason=%s", body.UserId, body.RejectionReason)
+        return {"message": f"Vendor {body.UserId} rejected."}
+
+    return await _outsystems_admin_call("/api/admin/vendor/reject", body.model_dump())

@@ -193,7 +193,8 @@ services:
       - "8007:8007"   # HTTP — charity/vendor/public user login → OutSystems → JWT
     environment:
       OUTSYSTEMS_API_URL:         ${OUTSYSTEMS_API_URL}
-      OUTSYSTEMS_API_KEY:         ${OUTSYSTEMS_API_KEY}
+      OUTSYSTEMS_ADMIN_URL:       ${OUTSYSTEMS_ADMIN_URL}
+      OUTSYSTEMS_ADMIN_API_KEY:   ${OUTSYSTEMS_ADMIN_API_KEY}
       OUTSYSTEMS_TIMEOUT_SECONDS: ${OUTSYSTEMS_TIMEOUT_SECONDS}
       MOCK_OUTSYSTEMS:            ${MOCK_OUTSYSTEMS}
       MOCK_OUTSYSTEMS_APPROVED:   ${MOCK_OUTSYSTEMS_APPROVED}
@@ -315,6 +316,30 @@ services:
     depends_on:
       rabbitmq:
         condition: service_started
+
+  # ── API Gateway ────────────────────────────────────────────────────────────
+
+  kong:
+    image: kong:3.6-ubuntu
+    volumes:
+      - ./kong/kong.yml:/etc/kong/kong.yml:ro
+    environment:
+      KONG_DATABASE:            "off"          # DB-less declarative mode
+      KONG_DECLARATIVE_CONFIG:  /etc/kong/kong.yml
+      KONG_PROXY_LISTEN:        0.0.0.0:8000
+      KONG_ADMIN_LISTEN:        0.0.0.0:8001
+      KONG_PROXY_ACCESS_LOG:    /dev/stdout
+      KONG_ADMIN_ACCESS_LOG:    /dev/stdout
+      KONG_PROXY_ERROR_LOG:     /dev/stderr
+      KONG_ADMIN_ERROR_LOG:     /dev/stderr
+    ports:
+      - "8000:8000"   # Proxy — single entry point for all frontend/API calls
+      - "8100:8001"   # Admin API — 8100 on host (avoids collision with inventory-service on 8001)
+    healthcheck:
+      test: ["CMD", "kong", "health"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
 
 volumes:
   inventory-db-data:

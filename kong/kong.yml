@@ -1,0 +1,151 @@
+_format_version: "3.0"
+_transform: true
+
+# PasarConnect — Kong DB-less declarative config
+# Phase: Routing only (no auth plugins yet)
+#
+# External URL structure (through Kong :8000):
+#   /auth/*              → outsystems-service  :8007
+#   /admin/*             → outsystems-service  :8007  (admin approve/reject)
+#   /api/listings        → listing-service     :8008
+#   /api/claims/*        → claim-service       :8002
+#   /api/payments/*      → payment-service     :8003
+#   /webhooks/*          → payment-service     :8003  (Stripe webhook path unchanged)
+#   /api/inventory/*     → inventory-service   :8001
+#   /api/waitlist/*      → waitlist-service    :8010
+#
+# Health check paths (through Kong):
+#   /auth/health         → outsystems-service  :8007/health
+#   /api/listings/health → listing-service     :8008/health
+#   /api/claims/health   → claim-service       :8002/health
+#   /api/payments/health → payment-service     :8003/health
+#   /api/inventory/health→ inventory-service   :8001/health
+#   /api/waitlist/health → waitlist-service    :8010/health
+#
+# Path-stripping strategy:
+#   outsystems: strip_path=false — endpoints already start with /auth/ or /admin/
+#   others:     strip_path=true + service URL path prefix — Kong strips the /api/X
+#               prefix and the service URL re-adds the actual internal path prefix.
+#   health-specific Kong services point directly to /health on each upstream.
+
+services:
+
+  # ── OutSystems Auth Wrapper (port 8007) ──────────────────────────────────
+  # All login/register endpoints start with /auth/; admin endpoints with /admin/.
+  # strip_path=false preserves the full path — the wrapper already has /auth/* routes.
+  - name: outsystems-service
+    url: http://outsystems-service:8007
+    routes:
+      - name: outsystems-auth
+        paths:
+          - /auth
+        strip_path: false
+      - name: outsystems-admin
+        paths:
+          - /admin
+        strip_path: false
+
+  # ── Listing Service (port 8008) ───────────────────────────────────────────
+  # Main endpoint: POST /api/listings — path already matches Kong route, no strip.
+  - name: listing-service
+    url: http://listing-service:8008
+    routes:
+      - name: listing-api
+        paths:
+          - /api/listings
+        strip_path: false   # /api/listings on kong → /api/listings on service ✓
+
+  # Listing health — more specific route wins over /api/listings prefix.
+  # strip_path=true strips /api/listings/health entirely; service URL path /health appended.
+  - name: listing-service-health
+    url: http://listing-service:8008/health
+    routes:
+      - name: listing-health
+        paths:
+          - /api/listings/health
+        strip_path: true
+
+  # ── Claim Service (port 8002) ─────────────────────────────────────────────
+  # Endpoints: /claims, /claims/{id}, /claims/{id}/cancel, ...
+  # Kong strips /api/claims; service URL /claims is prepended to the remainder.
+  - name: claim-service
+    url: http://claim-service:8002/claims
+    routes:
+      - name: claim-api
+        paths:
+          - /api/claims
+        strip_path: true    # /api/claims/123 → strip → /123 → upstream /claims/123 ✓
+
+  - name: claim-service-health
+    url: http://claim-service:8002/health
+    routes:
+      - name: claim-health
+        paths:
+          - /api/claims/health
+        strip_path: true
+
+  # ── Payment Service (port 8003) ───────────────────────────────────────────
+  # Endpoints: /payments/intent, /payments/{id}/approve, /payments/{id}/reject, ...
+  # Kong strips /api/payments; service URL /payments is prepended.
+  - name: payment-service
+    url: http://payment-service:8003/payments
+    routes:
+      - name: payment-api
+        paths:
+          - /api/payments
+        strip_path: true    # /api/payments/intent → strip → /intent → upstream /payments/intent ✓
+
+  # Stripe webhook lives at /webhooks/stripe — different prefix, route separately.
+  - name: payment-webhook-service
+    url: http://payment-service:8003
+    routes:
+      - name: payment-webhooks
+        paths:
+          - /webhooks
+        strip_path: false   # /webhooks/stripe forwarded as-is ✓
+
+  - name: payment-service-health
+    url: http://payment-service:8003/health
+    routes:
+      - name: payment-health
+        paths:
+          - /api/payments/health
+        strip_path: true
+
+  # ── Inventory Service (port 8001) ─────────────────────────────────────────
+  # Endpoints: /listings, /listings/search/nearby, /listings/{id}
+  # Kong strips /api/inventory; service URL /listings is prepended.
+  - name: inventory-service
+    url: http://inventory-service:8001/listings
+    routes:
+      - name: inventory-api
+        paths:
+          - /api/inventory
+        strip_path: true    # /api/inventory/search/nearby → strip → /search/nearby → upstream /listings/search/nearby ✓
+
+  - name: inventory-service-health
+    url: http://inventory-service:8001/health
+    routes:
+      - name: inventory-health
+        paths:
+          - /api/inventory/health
+        strip_path: true
+
+  # ── Waitlist Service (port 8010) ──────────────────────────────────────────
+  # Endpoints: /waitlist/{listing_id}/entries
+  # Kong strips /api/waitlist; service URL /waitlist is prepended.
+  - name: waitlist-service
+    url: http://waitlist-service:8010/waitlist
+    routes:
+      - name: waitlist-api
+        paths:
+          - /api/waitlist
+        strip_path: true    # /api/waitlist/1/entries → strip → /1/entries → upstream /waitlist/1/entries ✓
+
+  - name: waitlist-service-health
+    url: http://waitlist-service:8010/health
+    routes:
+      - name: waitlist-health
+        paths:
+          - /api/waitlist/health
+        strip_path: true
