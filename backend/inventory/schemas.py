@@ -52,6 +52,26 @@ class FoodListingUpdate(BaseModel):
         return v
 
 
+# What the client sends when updating a listing
+class FoodListingUpdate(BaseModel):
+    title: Optional[str] = Field(None, min_length=1, max_length=255)
+    description: Optional[str] = Field(None, max_length=1024)
+    quantity: Optional[int] = Field(None, gt=0)
+    expiry_date: Optional[datetime] = None
+    status: Optional[ListingStatus] = None
+    address: Optional[str] = Field(None, max_length=512)
+
+    @field_validator("expiry_date")
+    @classmethod
+    def validate_expiry_date(cls, v: datetime) -> datetime:
+        if v is None:
+            return v
+        v_utc = v if v.tzinfo else v.replace(tzinfo=timezone.utc)
+        if v_utc <= datetime.now(tz=timezone.utc):
+            raise ValueError("expiry_date must be in the future")
+        return v
+
+
 # What the API returns
 class FoodListingResponse(BaseModel):
     id: int

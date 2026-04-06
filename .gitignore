@@ -19,6 +19,7 @@ env/
 .pytest_cache/
 .coverage
 htmlcov/
+*.db
 
 # ── Environment / secrets ─────────────────────────────────────────────────────
 .env

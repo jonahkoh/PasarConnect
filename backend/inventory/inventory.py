@@ -8,6 +8,7 @@ import geohash2
 
 import database
 from database import Base, get_db
+from geocoding import GeocodingError, geocode_address
 from grpc_server import start_grpc_server
 from models import FoodListing, ListingStatus
 from schemas import FoodListingCreate, FoodListingUpdate, FoodListingResponse
@@ -60,8 +61,9 @@ async def lifespan(app: FastAPI):
                 $$;
                 """
             )
-        )
         await conn.run_sync(Base.metadata.create_all)
+
+    await _seed_demo_listings()
 
     # Start the gRPC server alongside the HTTP server (same process, same event loop)
     grpc_server = await start_grpc_server()
@@ -79,6 +81,31 @@ app = FastAPI(title="PasarConnect — Inventory Service", lifespan=lifespan)
 @app.get("/health")
 async def health_check():
     return {"status": "healthy", "service": "inventory"}
+
+
+def _get_search_precision(radius_km: float) -> int:
+    # Higher radius = lower precision = larger area
+    if radius_km >= 10:
+        return 5  # ~4.8 km
+    if radius_km >= 5:
+        return 6  # ~1.2 km
+    if radius_km >= 2:
+        return 7  # ~150 m
+    if radius_km >= 0.5:
+        return 8  # ~20 m
+    return 9  # ~2.4 m
+
+
+def _get_nearby_geohashes(latitude: float, longitude: float, radius_km: float) -> List[str]:
+    precision = _get_search_precision(radius_km)
+    center_geohash = geohash2.encode(latitude, longitude, precision=precision)
+
+    try:
+        nearby_geohashes = geohash2.neighbors(center_geohash)
+        nearby_geohashes.add(center_geohash)
+        return list(nearby_geohashes)
+    except Exception:
+        return [center_geohash]
 
 
 @app.get("/listings", response_model=List[FoodListingResponse])
@@ -178,7 +205,6 @@ async def update_listing(
     listing = result.scalar_one_or_none()
     if listing is None:
         raise HTTPException(status_code=404, detail=f"Listing {listing_id} not found.")
-
     # Update only provided fields
     update_data = payload.model_dump(exclude_unset=True)
     for field, value in update_data.items():

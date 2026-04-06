@@ -3,6 +3,9 @@ export const mockListings = [
     id: 1,
     name: "Unsold Vegetable Bundle",
     vendor: "Tiong Bahru Wet Market",
+    address: "30 Seng Poh Rd, Singapore 168898",
+    latitude: 1.2849,
+    longitude: 103.832,
     imageUrl:
       "https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=900&q=80",
     distanceKm: 1.4,
@@ -20,6 +23,9 @@ export const mockListings = [
     id: 2,
     name: "Mixed Fruit Crate",
     vendor: "Tekka Market Fruit Stall",
+    address: "665 Buffalo Rd, Singapore 210665",
+    latitude: 1.3061,
+    longitude: 103.8506,
     imageUrl:
       "https://images.unsplash.com/photo-1619566636858-adf3ef46400b?auto=format&fit=crop&w=900&q=80",
     distanceKm: 2.1,
@@ -36,6 +42,9 @@ export const mockListings = [
     id: 3,
     name: "Bread & Bun Tray",
     vendor: "Bedok Market Bakery Stall",
+    address: "207 New Upper Changi Rd, Singapore 460207",
+    latitude: 1.3241,
+    longitude: 103.9302,
     imageUrl:
       "https://images.unsplash.com/photo-1509440159596-0249088772ff?auto=format&fit=crop&w=900&q=80",
     distanceKm: 0.9,
@@ -52,6 +61,9 @@ export const mockListings = [
     id: 4,
     name: "Cooked Rice Meal Packs",
     vendor: "Toa Payoh West Hawker Centre",
+    address: "127 Lorong 1 Toa Payoh, Singapore 310127",
+    latitude: 1.3397,
+    longitude: 103.8443,
     imageUrl:
       "https://images.unsplash.com/photo-1512058564366-18510be2db19?auto=format&fit=crop&w=900&q=80",
     distanceKm: 3.0,
@@ -68,8 +80,11 @@ export const mockListings = [
     id: 5,
     name: "Tofu & Soy Packs",
     vendor: "Geylang Serai Market",
+    address: "1 Geylang Serai, Singapore 402001",
+    latitude: 1.3174,
+    longitude: 103.8987,
     imageUrl:
-      "https://images.unsplash.com/photo-1603046891744-7612f0a0a4d5?auto=format&fit=crop&w=900&q=80",
+      "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=900&q=80",
     distanceKm: 2.7,
     quantityLabel: "10 packs",
     priceLabel: "Free",
@@ -84,6 +99,9 @@ export const mockListings = [
     id: 6,
     name: "Pastry Box",
     vendor: "Chinatown Complex Bakery Stall",
+    address: "335 Smith St, Singapore 050335",
+    latitude: 1.2831,
+    longitude: 103.8425,
     imageUrl:
       "https://images.unsplash.com/photo-1509365465985-25d11c17e812?auto=format&fit=crop&w=900&q=80",
     distanceKm: 1.6,

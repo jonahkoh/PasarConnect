@@ -3,6 +3,9 @@ export const mockPublicListings = [
     id: 101,
     name: "Discounted Chicken Rice Sets",
     vendor: "Maxwell Hawker Stall",
+    address: "1 Kadayanallur St, Singapore 069184",
+    latitude: 1.2803,
+    longitude: 103.8446,
     imageUrl:
       "https://images.unsplash.com/photo-1512058564366-18510be2db19?auto=format&fit=crop&w=900&q=80",
     distanceKm: 1.8,
@@ -18,6 +21,9 @@ export const mockPublicListings = [
     id: 102,
     name: "Fruit Bowl Pack",
     vendor: "Bugis Street Fruit Stall",
+    address: "3 New Bugis St, Singapore 188867",
+    latitude: 1.3009,
+    longitude: 103.8553,
     imageUrl:
       "https://images.unsplash.com/photo-1619566636858-adf3ef46400b?auto=format&fit=crop&w=900&q=80",
     distanceKm: 2.5,
@@ -33,6 +39,9 @@ export const mockPublicListings = [
     id: 103,
     name: "Bakery Clearance Box",
     vendor: "Old Airport Road Bakery Stall",
+    address: "51 Old Airport Rd, Singapore 390051",
+    latitude: 1.3082,
+    longitude: 103.8851,
     imageUrl:
       "https://images.unsplash.com/photo-1509440159596-0249088772ff?auto=format&fit=crop&w=900&q=80",
     distanceKm: 3.2,
@@ -48,6 +57,9 @@ export const mockPublicListings = [
     id: 104,
     name: "Vegetable Value Pack",
     vendor: "Jurong West Wet Market",
+    address: "502 Jurong West Ave 1, Singapore 640502",
+    latitude: 1.3509,
+    longitude: 103.7185,
     imageUrl:
       "https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=900&q=80",
     distanceKm: 2.3,
@@ -63,6 +75,9 @@ export const mockPublicListings = [
     id: 105,
     name: "Mee Siam Meal Pack",
     vendor: "Chomp Chomp Hawker Centre",
+    address: "20 Kensington Park Rd, Singapore 557269",
+    latitude: 1.3645,
+    longitude: 103.8668,
     imageUrl:
       "https://images.unsplash.com/photo-1516684732162-798a0062be99?auto=format&fit=crop&w=900&q=80",
     distanceKm: 1.2,
@@ -78,6 +93,9 @@ export const mockPublicListings = [
     id: 106,
     name: "Fresh Milk & Bread Combo",
     vendor: "Queenstown Market Provision Shop",
+    address: "159 Mei Chin Rd, Singapore 140159",
+    latitude: 1.2942,
+    longitude: 103.8061,
     imageUrl:
       "https://images.unsplash.com/photo-1550583724-b2692b85b150?auto=format&fit=crop&w=900&q=80",
     distanceKm: 0.8,
@@ -90,3 +108,4 @@ export const mockPublicListings = [
     pickupWindow: "Flexible",
   },
 ];
+// mock data
