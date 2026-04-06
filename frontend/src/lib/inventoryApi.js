@@ -9,7 +9,7 @@ const API_BASE = "/api/inventory";
  *         quantityLabel, priceLabel, badge, charityWindow, status, version,
  *         category, pickupWindow }
  */
-function normalizeApiListing(raw) {
+export function normalizeApiListing(raw) {
   const quantity =
     raw.quantity != null
       ? `${raw.quantity} unit${raw.quantity !== 1 ? "s" : ""}`

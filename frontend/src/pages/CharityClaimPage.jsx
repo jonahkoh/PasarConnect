@@ -92,6 +92,7 @@ export default function CharityClaimPage({
   onRemoveFromClaimQueue,
   onApplyClaimSuccesses,
   isLoading = false,
+  socket = null,
 }) {
   const navigate = useNavigate();
   const [search, setSearch] = useState("");
@@ -155,6 +156,13 @@ export default function CharityClaimPage({
     () => filteredListings.filter((item) => typeof item.latitude === "number" && typeof item.longitude === "number"),
     [filteredListings]
   );
+
+  useEffect(() => {
+    if (!socket || filteredMapListings.length === 0) return;
+    filteredMapListings.forEach((item) => {
+      socket.emit("subscribe:listing", { listing_id: item.id });
+    });
+  }, [socket, filteredMapListings]);
 
   useEffect(() => {
     if (filteredMapListings.some((item) => item.id === selectedMapListingId)) {

@@ -2,16 +2,23 @@ import { useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import TopNav from "../components/TopNav";
 import ListingLocationMap from "../components/ListingLocationMap";
+import { submitClaim, joinWaitlist } from "../lib/claimsApi";
 
 export default function CharityClaimDetailPage({
   listings,
   selectedClaimIds,
   onToggleClaimQueue,
   onConfirmClaim,
+  authUser,
+  onToast,
 }) {
   const navigate = useNavigate();
   const { listingId } = useParams();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [claimError, setClaimError] = useState(null);
+  const [waitlistInfo, setWaitlistInfo] = useState(null); // { window_closes_at } on queue_window_active
+  const [isJoiningWaitlist, setIsJoiningWaitlist] = useState(false);
+  const [waitlistPosition, setWaitlistPosition] = useState(null); // position after joining
 
   const listing = useMemo(
     () => listings.find((item) => String(item.id) === listingId),
@@ -20,22 +27,51 @@ export default function CharityClaimDetailPage({
   const isQueued = listing ? selectedClaimIds.includes(listing.id) : false;
 
   async function handleClaim() {
-    if (!listing) {
-      return;
-    }
-
+    if (!listing) return;
     setIsSubmitting(true);
-    await new Promise((resolve) => setTimeout(resolve, 400));
+    setClaimError(null);
+    setWaitlistInfo(null);
 
-    const updatedItem = onConfirmClaim(listing.id);
-    const nextLabel = updatedItem?.quantityLabel ?? listing.quantityLabel;
+    try {
+      await submitClaim({
+        listing_id: listing.id,
+        charity_id: Number(authUser?.userId),
+        listing_version: listing.version ?? 0,
+        token: authUser?.token,
+      });
 
-    navigate("/charity", {
-      replace: true,
-      state: {
-        message: `Claim confirmed for "${listing.name}". Remaining quantity: ${nextLabel}.`,
-      },
-    });
+      const updatedItem = onConfirmClaim(listing.id);
+      const nextLabel = updatedItem?.quantityLabel ?? listing.quantityLabel;
+      onToast?.(`Claim confirmed for "${listing.name}". Remaining: ${nextLabel}.`);
+      navigate("/charity", { replace: true });
+    } catch (err) {
+      const errorCode = err.detail?.error;
+      if (errorCode === "queue_window_active" || errorCode === "queue_exists") {
+        setWaitlistInfo(err.detail);
+      } else {
+        setClaimError(err.message);
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function handleJoinWaitlist() {
+    if (!listing) return;
+    setIsJoiningWaitlist(true);
+    try {
+      const result = await joinWaitlist({
+        listing_id: listing.id,
+        charity_id: Number(authUser?.userId),
+        token: authUser?.token,
+      });
+      setWaitlistPosition(result.position);
+      setWaitlistInfo(null);
+    } catch (err) {
+      setClaimError(err.message);
+    } finally {
+      setIsJoiningWaitlist(false);
+    }
   }
 
   if (!listing) {
@@ -98,10 +134,12 @@ export default function CharityClaimDetailPage({
                     <span>Pickup from</span>
                     <strong>{listing.vendor}</strong>
                   </div>
-                  <div className="claim-page__info-row">
-                    <span>Distance</span>
-                    <strong>{listing.distanceKm} km away</strong>
-                  </div>
+                  {listing.distanceKm != null && (
+                    <div className="claim-page__info-row">
+                      <span>Distance</span>
+                      <strong>{listing.distanceKm} km away</strong>
+                    </div>
+                  )}
                   <div className="claim-page__info-row">
                     <span>Pickup address</span>
                     <strong>{listing.address}</strong>
@@ -109,41 +147,75 @@ export default function CharityClaimDetailPage({
                 </section>
 
                 <div className="claim-page__panel claim-page__panel--marketplace">
-                  <div className="claim-page__market-actions">
-                    <button
-                      type="button"
-                      className={`claim-page__queue-button${isQueued ? " claim-page__queue-button--danger" : ""}`}
-                      onClick={() => onToggleClaimQueue(listing.id)}
-                      disabled={listing.status !== "AVAILABLE"}
-                    >
-                      {isQueued ? "Remove From Queue" : "Add To Claim Queue"}
-                    </button>
-                  </div>
-
-                  {isQueued && (
-                    <p className="claim-page__queue-note">
-                      This listing is already in your claim queue on the main page.
+                  {claimError && (
+                    <p className="claim-page__error" role="alert" style={{ color: "#c0392b", marginBottom: "0.75rem" }}>
+                      {claimError}
                     </p>
                   )}
 
-                  <div className="claim-page__panel-footer">
-                    <button
-                      type="button"
-                      className="cart-summary__checkout"
-                      onClick={handleClaim}
-                      disabled={isSubmitting || listing.status !== "AVAILABLE"}
-                    >
-                      {isSubmitting ? "Submitting..." : "Claim Now"}
-                    </button>
+                  {waitlistPosition != null ? (
+                    <p className="claim-page__queue-note" role="status">
+                      You joined the waitlist.
+                      {waitlistPosition > 0
+                        ? ` Your position: #${waitlistPosition}.`
+                        : " You're in the queue window — position assigned at window close."}
+                    </p>
+                  ) : waitlistInfo ? (
+                    <div>
+                      <p className="claim-page__queue-note" role="status">
+                        {waitlistInfo.message ?? "This listing is in its charity queue window."}
+                        {waitlistInfo.window_closes_at &&
+                          ` Window closes: ${new Date(waitlistInfo.window_closes_at).toLocaleTimeString()}.`}
+                      </p>
+                      <button
+                        type="button"
+                        className="cart-summary__checkout"
+                        onClick={handleJoinWaitlist}
+                        disabled={isJoiningWaitlist}
+                        style={{ marginTop: "0.5rem" }}
+                      >
+                        {isJoiningWaitlist ? "Joining..." : "Join Waitlist"}
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="claim-page__market-actions">
+                        <button
+                          type="button"
+                          className={`claim-page__queue-button${isQueued ? " claim-page__queue-button--danger" : ""}`}
+                          onClick={() => onToggleClaimQueue(listing.id)}
+                          disabled={listing.status !== "AVAILABLE"}
+                        >
+                          {isQueued ? "Remove From Queue" : "Add To Claim Queue"}
+                        </button>
+                      </div>
 
-                    <button
-                      type="button"
-                      className="claim-page__secondary"
-                      onClick={() => navigate("/charity")}
-                    >
-                      Continue Browsing
-                    </button>
-                  </div>
+                      {isQueued && (
+                        <p className="claim-page__queue-note">
+                          This listing is already in your claim queue on the main page.
+                        </p>
+                      )}
+
+                      <div className="claim-page__panel-footer">
+                        <button
+                          type="button"
+                          className="cart-summary__checkout"
+                          onClick={handleClaim}
+                          disabled={isSubmitting || listing.status !== "AVAILABLE"}
+                        >
+                          {isSubmitting ? "Submitting..." : "Claim Now"}
+                        </button>
+
+                        <button
+                          type="button"
+                          className="claim-page__secondary"
+                          onClick={() => navigate("/charity")}
+                        >
+                          Continue Browsing
+                        </button>
+                      </div>
+                    </>
+                  )}
                 </div>
               </aside>
             </div>

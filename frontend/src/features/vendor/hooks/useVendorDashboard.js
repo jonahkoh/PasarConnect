@@ -1,54 +1,56 @@
 import { useEffect, useState } from "react";
-import { fetchVendorDashboard } from "../api/vendorApi";
+import { fetchVendorListings } from "../api/vendorApi";
 
-export function useVendorDashboard() {
+export function useVendorDashboard(authUser, socket) {
   const [listings, setListings] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
 
   useEffect(() => {
+    if (!authUser?.token) {
+      setIsLoading(false);
+      return;
+    }
+
     let isMounted = true;
+    const controller = new AbortController();
 
     async function loadDashboard() {
       setIsLoading(true);
       setError("");
-
       try {
-        const data = await fetchVendorDashboard();
-
-        if (!isMounted) {
-          return;
-        }
-
-        setListings(data.listings);
-        setNotifications(data.notifications);
+        const data = await fetchVendorListings(authUser.token, authUser.userId);
+        if (!isMounted) return;
+        setListings(data);
       } catch (loadError) {
-        if (!isMounted) {
-          return;
-        }
-
-        setError(
-          loadError?.message ||
-            "Unable to load vendor listings right now. Please try again."
-        );
+        if (!isMounted) return;
+        setError(loadError?.message ?? "Unable to load vendor listings. Please try again.");
       } finally {
-        if (isMounted) {
-          setIsLoading(false);
-        }
+        if (isMounted) setIsLoading(false);
       }
     }
 
     loadDashboard();
-
     return () => {
       isMounted = false;
+      controller.abort();
     };
-  }, []);
+  }, [authUser?.token, authUser?.userId]);
+
+  // Subscribe to per-listing socket rooms once listings are loaded
+  useEffect(() => {
+    if (!socket || listings.length === 0) return;
+    listings.forEach((listing) => {
+      socket.emit("subscribe:listing", { listing_id: listing.id });
+    });
+  }, [socket, listings]);
 
   return {
     listings,
+    setListings,
     notifications,
+    setNotifications,
     isLoading,
     error,
   };

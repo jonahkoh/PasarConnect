@@ -2,7 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { mockListings } from "./data/mockListings";
 import { mockPublicListings } from "./data/mockPublicListings";
-import { fetchListings } from "./lib/inventoryApi";
+import { fetchListings, normalizeApiListing } from "./lib/inventoryApi";
+import { useSocket } from "./hooks/useSocket";
+import Toast from "./components/Toast";
 import VendorDashboardPage from "./features/vendor/pages/VendorDashboardPage";
 import CharityClaimPage from "./pages/CharityClaimPage";
 import CharityClaimDetailPage from "./pages/CharityClaimDetailPage";
@@ -43,6 +45,52 @@ export default function App() {
   // Start in loading state only when a token is present so the pages don't
   // flash mock data before real listings arrive.
   const [isListingsLoading, setIsListingsLoading] = useState(Boolean(authUser?.token));
+
+  const socket = useSocket(authUser);
+  const [toast, setToast] = useState(null);
+
+  // Auto-dismiss toast after 5 s
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 5000);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  // Socket event handlers — all state mutations live here since App owns the listings state
+  useEffect(() => {
+    if (!socket) return;
+
+    socket.on("listing:new", (raw) => {
+      const listing = normalizeApiListing(raw);
+      setCharityListings((prev) => [listing, ...prev]);
+      setPublicListings((prev) => [listing, ...prev]);
+    });
+
+    socket.on("listing:window_closed", ({ listing_id }) => {
+      const patch = { badge: "Window Closed", charityWindow: "" };
+      setCharityListings((prev) =>
+        prev.map((l) => (l.id === listing_id ? { ...l, ...patch } : l))
+      );
+    });
+
+    socket.on("claim:success", ({ listing_id }) => {
+      const patch = { status: "UNAVAILABLE", badge: "Claimed", charityWindow: "" };
+      setCharityListings((prev) =>
+        prev.map((l) => (l.id === listing_id ? { ...l, ...patch } : l))
+      );
+    });
+
+    socket.on("claim:promoted", () => {
+      setToast("You've been promoted in the waitlist! Open the listing to accept your slot.");
+    });
+
+    return () => {
+      socket.off("listing:new");
+      socket.off("listing:window_closed");
+      socket.off("claim:success");
+      socket.off("claim:promoted");
+    };
+  }, [socket]);
 
   useEffect(() => {
     if (!authUser?.token) return;
@@ -193,6 +241,7 @@ export default function App() {
 
   return (
     <BrowserRouter>
+      <Toast message={toast} onDismiss={() => setToast(null)} />
       <Routes>
         <Route path="/" element={<LandingPage />} />
         <Route path="/login" element={<LoginPage />} />
@@ -206,6 +255,7 @@ export default function App() {
               onRemoveFromClaimQueue={removeFromClaimQueue}
               onApplyClaimSuccesses={applyClaimSuccesses}
               isLoading={isListingsLoading}
+              socket={socket}
             />
           }
         />
@@ -217,6 +267,8 @@ export default function App() {
               selectedClaimIds={selectedClaimIds}
               onToggleClaimQueue={toggleClaimQueue}
               onConfirmClaim={confirmCharityClaim}
+              authUser={authUser}
+              onToast={setToast}
             />
           }
         />
@@ -257,7 +309,7 @@ export default function App() {
             />
           }
         />
-        <Route path="/vendor" element={<VendorDashboardPage />} />
+        <Route path="/vendor" element={<VendorDashboardPage authUser={authUser} socket={socket} />} />
       </Routes>
     </BrowserRouter>
   );
