@@ -123,6 +123,7 @@ services:
     build:
       context: ./backend
       dockerfile: listing/Dockerfile
+    restart: on-failure
     ports:
       - "8008:8008"
     environment:
@@ -145,6 +146,7 @@ services:
     build:
       context: ./backend
       dockerfile: claim/Dockerfile
+    restart: on-failure
     ports:
       - "8002:8002"
     environment:
@@ -255,6 +257,7 @@ services:
     build:
       context: ./backend
       dockerfile: payment/Dockerfile
+    restart: on-failure
     ports:
       - "8003:8003"
     environment:
@@ -319,6 +322,7 @@ services:
     build:
       context: ./backend
       dockerfile: notification/Dockerfile
+    restart: on-failure
     ports:
       - "8011:8011"
     environment:
