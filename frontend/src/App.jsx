@@ -1,8 +1,14 @@
 import { useMemo, useState } from "react";
-import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { mockListings } from "./data/mockListings";
+import { mockPublicListings } from "./data/mockPublicListings";
+import VendorDashboardPage from "./features/vendor/pages/VendorDashboardPage";
 import CharityClaimPage from "./pages/CharityClaimPage";
+import CharityClaimDetailPage from "./pages/CharityClaimDetailPage";
+import LandingPage from "./pages/LandingPage";
+import LoginPage from "./pages/LoginPage";
 import MarketplaceCartPage from "./pages/MarketplaceCartPage";
+import PublicMarketplaceDetailPage from "./pages/PublicMarketplaceDetailPage";
 import PublicMarketplacePage from "./pages/PublicMarketplacePage";
 
 function parsePrice(value) {
@@ -22,6 +28,8 @@ function decrementQuantityLabel(label) {
 
 export default function App() {
   const [charityListings, setCharityListings] = useState(mockListings);
+  const [publicListings] = useState(mockPublicListings);
+  const [selectedClaimIds, setSelectedClaimIds] = useState([]);
   const [marketplaceCart, setMarketplaceCart] = useState([]);
 
   const totalCartItems = useMemo(
@@ -33,6 +41,10 @@ export default function App() {
     if (successfulIds.length === 0) {
       return;
     }
+
+    setSelectedClaimIds((prev) =>
+      prev.filter((id) => !successfulIds.includes(id))
+    );
 
     setCharityListings((prev) =>
       prev.map((entry) => {
@@ -51,6 +63,44 @@ export default function App() {
         };
       })
     );
+  }
+
+  function confirmCharityClaim(itemId) {
+    let updatedListing = null;
+
+    setSelectedClaimIds((prev) => prev.filter((id) => id !== itemId));
+
+    setCharityListings((prev) =>
+      prev.map((entry) => {
+        if (entry.id !== itemId) {
+          return entry;
+        }
+
+        const nextQuantity = Math.max(parseQuantity(entry.quantityLabel) - 1, 0);
+        updatedListing = {
+          ...entry,
+          quantityLabel: decrementQuantityLabel(entry.quantityLabel),
+          status: nextQuantity === 0 ? "UNAVAILABLE" : "AVAILABLE",
+          badge: nextQuantity === 0 ? "Claimed" : "Available",
+          charityWindow: nextQuantity === 0 ? "" : entry.charityWindow,
+        };
+        return updatedListing;
+      })
+    );
+
+    return updatedListing;
+  }
+
+  function toggleClaimQueue(itemId) {
+    setSelectedClaimIds((prev) =>
+      prev.includes(itemId)
+        ? prev.filter((id) => id !== itemId)
+        : [...prev, itemId]
+    );
+  }
+
+  function removeFromClaimQueue(itemId) {
+    setSelectedClaimIds((prev) => prev.filter((id) => id !== itemId));
   }
 
   function getCartQuantity(itemId) {
@@ -110,13 +160,28 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/" element={<Navigate to="/charity" replace />} />
+        <Route path="/" element={<LandingPage />} />
+        <Route path="/login" element={<LoginPage />} />
         <Route
           path="/charity"
           element={
             <CharityClaimPage
               listings={charityListings}
+              selectedClaimIds={selectedClaimIds}
+              onToggleClaimQueue={toggleClaimQueue}
+              onRemoveFromClaimQueue={removeFromClaimQueue}
               onApplyClaimSuccesses={applyClaimSuccesses}
+            />
+          }
+        />
+        <Route
+          path="/charity/:listingId"
+          element={
+            <CharityClaimDetailPage
+              listings={charityListings}
+              selectedClaimIds={selectedClaimIds}
+              onToggleClaimQueue={toggleClaimQueue}
+              onConfirmClaim={confirmCharityClaim}
             />
           }
         />
@@ -124,10 +189,24 @@ export default function App() {
           path="/marketplace"
           element={
             <PublicMarketplacePage
+              listings={publicListings}
               cart={marketplaceCart}
               totalCartItems={totalCartItems}
               getCartQuantity={getCartQuantity}
               onAddToCart={addToMarketplaceCart}
+              onUpdateQuantity={updateMarketplaceCartItem}
+            />
+          }
+        />
+        <Route
+          path="/marketplace/:listingId"
+          element={
+            <PublicMarketplaceDetailPage
+              listings={publicListings}
+              cart={marketplaceCart}
+              getCartQuantity={getCartQuantity}
+              onAddToCart={addToMarketplaceCart}
+              onUpdateQuantity={updateMarketplaceCartItem}
             />
           }
         />
@@ -142,6 +221,7 @@ export default function App() {
             />
           }
         />
+        <Route path="/vendor" element={<VendorDashboardPage />} />
       </Routes>
     </BrowserRouter>
   );

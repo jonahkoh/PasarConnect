@@ -1,8 +1,14 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import TopNav from "../components/TopNav";
+import ListingLocationMap from "../components/ListingLocationMap";
 
-export default function CharityClaimDetailPage({ listings, onConfirmClaim }) {
+export default function CharityClaimDetailPage({
+  listings,
+  selectedClaimIds,
+  onToggleClaimQueue,
+  onConfirmClaim,
+}) {
   const navigate = useNavigate();
   const { listingId } = useParams();
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -11,6 +17,7 @@ export default function CharityClaimDetailPage({ listings, onConfirmClaim }) {
     () => listings.find((item) => String(item.id) === listingId),
     [listingId, listings]
   );
+  const isQueued = listing ? selectedClaimIds.includes(listing.id) : false;
 
   async function handleClaim() {
     if (!listing) {
@@ -49,77 +56,116 @@ export default function CharityClaimDetailPage({ listings, onConfirmClaim }) {
       <TopNav />
 
       <main className="page">
-        <div className="claim-page">
-          <div className="claim-page__main">
-            <Link className="claim-page__back" to="/charity">
-              Back to listings
-            </Link>
+        <div className="claim-page claim-page--charity">
+          <div className="claim-page__main claim-page__main--marketplace">
+            <div className="claim-page__product">
+              <section className="claim-page__gallery">
+                <Link className="claim-page__back" to="/charity">
+                  Back to listings
+                </Link>
 
-            <div className="claim-page__hero">
-              <div>
-                <p className="claim-page__eyebrow">Confirm Charity Claim</p>
-                <h1>{listing.name}</h1>
+                <div className="claim-page__gallery-frame">
+                  <img
+                    className="claim-page__image"
+                    src={listing.imageUrl}
+                    alt={listing.name}
+                  />
+                </div>
+              </section>
+
+              <aside className="claim-page__product-info">
+                <div className="claim-page__hero">
+                  <div>
+                    <p className="claim-page__eyebrow">Confirm Charity Claim</p>
+                    <h1>{listing.name}</h1>
+                  </div>
+
+                  <span className="claim-page__status">{listing.badge}</span>
+                </div>
+
+                <p className="claim-page__market-price">{listing.quantityLabel}</p>
+
+                <p className="claim-page__product-copy">
+                  No payment is required. Confirm the claim under your organization and proceed with pickup coordination.
+                </p>
+
+                <section className="claim-page__info-strip">
+                  <div className="claim-page__info-row">
+                    <span>Pickup window</span>
+                    <strong>{listing.pickupWindow}</strong>
+                  </div>
+                  <div className="claim-page__info-row">
+                    <span>Pickup from</span>
+                    <strong>{listing.vendor}</strong>
+                  </div>
+                  <div className="claim-page__info-row">
+                    <span>Distance</span>
+                    <strong>{listing.distanceKm} km away</strong>
+                  </div>
+                  <div className="claim-page__info-row">
+                    <span>Pickup address</span>
+                    <strong>{listing.address}</strong>
+                  </div>
+                </section>
+
+                <div className="claim-page__panel claim-page__panel--marketplace">
+                  <div className="claim-page__market-actions">
+                    <button
+                      type="button"
+                      className={`claim-page__queue-button${isQueued ? " claim-page__queue-button--danger" : ""}`}
+                      onClick={() => onToggleClaimQueue(listing.id)}
+                      disabled={listing.status !== "AVAILABLE"}
+                    >
+                      {isQueued ? "Remove From Queue" : "Add To Claim Queue"}
+                    </button>
+                  </div>
+
+                  {isQueued && (
+                    <p className="claim-page__queue-note">
+                      This listing is already in your claim queue on the main page.
+                    </p>
+                  )}
+
+                  <div className="claim-page__panel-footer">
+                    <button
+                      type="button"
+                      className="cart-summary__checkout"
+                      onClick={handleClaim}
+                      disabled={isSubmitting || listing.status !== "AVAILABLE"}
+                    >
+                      {isSubmitting ? "Submitting..." : "Claim Now"}
+                    </button>
+
+                    <button
+                      type="button"
+                      className="claim-page__secondary"
+                      onClick={() => navigate("/charity")}
+                    >
+                      Continue Browsing
+                    </button>
+                  </div>
+                </div>
+              </aside>
+            </div>
+
+            <section className="claim-page__map-section">
+              <div className="claim-page__map-copy">
+                <p className="claim-page__eyebrow">Rough static pickup map</p>
+                <h2>Where to pick this up</h2>
                 <p>
-                  No payment is required. Confirm the claim under your organization
-                  and proceed with pickup coordination.
+                  This is a rough visual location for planning and coordination before pickup.
                 </p>
               </div>
 
-              <span className="claim-page__status">{listing.badge}</span>
-            </div>
-
-            <img
-              className="claim-page__image"
-              src={listing.imageUrl}
-              alt={listing.name}
-            />
-
-            <section className="claim-page__details">
-              <article>
-                <h2>Quantity</h2>
-                <p>{listing.quantityLabel}</p>
-              </article>
-              <article>
-                <h2>Pickup Window</h2>
-                <p>{listing.pickupWindow}</p>
-              </article>
-              <article>
-                <h2>Location</h2>
-                <p>{listing.vendor}</p>
-              </article>
-              <article>
-                <h2>Distance</h2>
-                <p>{listing.distanceKm} km away</p>
-              </article>
+              <ListingLocationMap
+                listings={[listing]}
+                selectedListingId={listing.id}
+                interactive={false}
+                className="claim-page__map"
+                zoom={15}
+              />
             </section>
           </div>
-
-          <aside className="claim-page__sidebar">
-            <div className="claim-page__panel">
-              <h2>Confirm Claim</h2>
-              <p className="claim-page__panel-copy">
-                This claim is processed under your charity organization. The system
-                will reduce the available quantity after confirmation.
-              </p>
-
-              <button
-                type="button"
-                className="cart-summary__checkout"
-                onClick={handleClaim}
-                disabled={isSubmitting || listing.status !== "AVAILABLE"}
-              >
-                {isSubmitting ? "Submitting..." : "Confirm Claim"}
-              </button>
-
-              <button
-                type="button"
-                className="claim-page__secondary"
-                onClick={() => navigate("/charity")}
-              >
-                Cancel
-              </button>
-            </div>
-          </aside>
         </div>
       </main>
     </div>

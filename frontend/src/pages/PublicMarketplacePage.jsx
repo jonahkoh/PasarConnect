@@ -1,10 +1,10 @@
-import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import TopNav from "../components/TopNav";
 import FoodCard from "../components/FoodCard";
 import CharityFilterSidebar from "../components/CharityFilterSidebar";
 import CartSummary from "../components/CartSummary";
-import { mockPublicListings } from "../data/mockPublicListings";
+import LiveFoodMap from "../components/LiveFoodMap";
 
 function parseQuantity(value) {
   const match = value.match(/\d+/);
@@ -12,11 +12,14 @@ function parseQuantity(value) {
 }
 
 export default function PublicMarketplacePage({
+  listings,
   cart,
   totalCartItems,
   getCartQuantity,
   onAddToCart,
+  onUpdateQuantity,
 }) {
+  const navigate = useNavigate();
   const [addingId, setAddingId] = useState(null);
   const [message, setMessage] = useState("");
   const [search, setSearch] = useState("");
@@ -24,6 +27,7 @@ export default function PublicMarketplacePage({
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [selectedCategories, setSelectedCategories] = useState([]);
   const [selectedPickupWindows, setSelectedPickupWindows] = useState([]);
+  const [selectedMapListingId, setSelectedMapListingId] = useState(listings[0]?.id ?? null);
 
   function toggleValue(setter, currentValues, value) {
     setter(
@@ -39,7 +43,7 @@ export default function PublicMarketplacePage({
   }
 
   const filteredListings = useMemo(() => {
-    let result = [...mockPublicListings];
+    let result = [...listings];
     const keyword = search.trim().toLowerCase();
 
     if (keyword) {
@@ -67,7 +71,29 @@ export default function PublicMarketplacePage({
     }
 
     return result;
-  }, [search, selectedCategories, selectedPickupWindows, sortBy]);
+  }, [listings, search, selectedCategories, selectedPickupWindows, sortBy]);
+
+  const filteredMapListings = useMemo(
+    () => filteredListings.filter((item) => typeof item.latitude === "number" && typeof item.longitude === "number"),
+    [filteredListings]
+  );
+
+  useEffect(() => {
+    if (filteredMapListings.some((item) => item.id === selectedMapListingId)) {
+      return;
+    }
+
+    setSelectedMapListingId(filteredMapListings[0]?.id ?? null);
+  }, [filteredMapListings, selectedMapListingId]);
+
+  function handlePreviewLocation(item) {
+    setSelectedMapListingId(item.id);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function handleOpenDetail(item) {
+    navigate(`/marketplace/${item.id}`);
+  }
 
   const cartItems = useMemo(
     () =>
@@ -114,6 +140,18 @@ export default function PublicMarketplacePage({
             your cart.
           </p>
         </div>
+
+        <LiveFoodMap
+          listings={filteredMapListings}
+          selectedListingId={selectedMapListingId}
+          onSelectListing={setSelectedMapListingId}
+          eyebrow="Marketplace map"
+          title="Discounted food pickup spots"
+          subcopy="Browse the live marketplace visually, inspect rough pickup areas, and open a listing before adding it to your cart."
+          selectedLabel="Selected marketplace item"
+          routeBase="/marketplace"
+          primaryActionLabel="Open item"
+        />
 
         <section className="marketplace-dashboard">
           <CharityFilterSidebar
@@ -181,6 +219,8 @@ export default function PublicMarketplacePage({
                       key={item.id}
                       item={item}
                       onAction={handleAdd}
+                      onPreview={handlePreviewLocation}
+                      onOpenDetail={handleOpenDetail}
                       isProcessing={addingId === item.id}
                       isDisabled={remainingQuantity === 0}
                       actionLabel={
@@ -198,6 +238,7 @@ export default function PublicMarketplacePage({
             items={cartItems}
             totalItems={totalCartItems}
             subtotal={subtotal}
+            onUpdateQuantity={onUpdateQuantity}
             footer={
               <Link className="cart-summary__link" to="/marketplace/cart">
                 Open full cart
