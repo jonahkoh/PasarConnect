@@ -92,6 +92,12 @@ services:
     ports:
       - "5672:5672"    # AMQP
       - "15672:15672"  # Management UI  →  http://localhost:15672
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
 
   # ── Services ───────────────────────────────────────────────────────────────
 
@@ -131,7 +137,7 @@ services:
       - ./keys:/app/keys:ro
     depends_on:
       rabbitmq:
-        condition: service_started
+        condition: service_healthy
       inventory-service:
         condition: service_started
 
@@ -161,7 +167,7 @@ services:
       - ./keys:/app/keys:ro
     depends_on:
       rabbitmq:
-        condition: service_started
+        condition: service_healthy
       inventory-service:
         condition: service_started
       claim-log-service:
@@ -270,7 +276,7 @@ services:
       - ./keys:/app/keys:ro
     depends_on:
       rabbitmq:
-        condition: service_started
+        condition: service_healthy
       inventory-service:
         condition: service_started
       stripe-wrapper:
@@ -322,7 +328,7 @@ services:
       PORT:          8011
     depends_on:
       rabbitmq:
-        condition: service_started
+        condition: service_healthy
 
   # ── API Gateway ────────────────────────────────────────────────────────────
 
