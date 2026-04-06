@@ -237,6 +237,7 @@ export default function CharityClaimDetailPage({
               </aside>
             </div>
 
+            {listing.latitude != null && listing.longitude != null && (
             <section className="claim-page__map-section">
               <div className="claim-page__map-copy">
                 <p className="claim-page__eyebrow">Rough static pickup map</p>
@@ -254,6 +255,7 @@ export default function CharityClaimDetailPage({
                 zoom={15}
               />
             </section>
+            )}
           </div>
         </div>
       </main>

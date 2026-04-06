@@ -24,14 +24,16 @@ function MapViewportController({ listings, selectedListingId, userLocation, zoom
   useEffect(() => {
     const selectedListing = listings.find((listing) => listing.id === selectedListingId);
 
-    if (selectedListing) {
+    if (selectedListing && selectedListing.latitude != null && selectedListing.longitude != null) {
       map.setView([selectedListing.latitude, selectedListing.longitude], zoom, {
         animate: true,
       });
       return;
     }
 
-    const points = listings.map((listing) => [listing.latitude, listing.longitude]);
+    const points = listings
+      .filter((listing) => listing.latitude != null && listing.longitude != null)
+      .map((listing) => [listing.latitude, listing.longitude]);
 
     if (userLocation) {
       points.push([userLocation.latitude, userLocation.longitude]);
@@ -89,12 +91,13 @@ export default function ListingLocationMap({
   const mapCenter = useMemo(() => {
     const selectedListing = listings.find((listing) => listing.id === selectedListingId);
 
-    if (selectedListing) {
+    if (selectedListing && selectedListing.latitude != null && selectedListing.longitude != null) {
       return [selectedListing.latitude, selectedListing.longitude];
     }
 
-    if (listings.length > 0) {
-      return [listings[0].latitude, listings[0].longitude];
+    const first = listings.find((l) => l.latitude != null && l.longitude != null);
+    if (first) {
+      return [first.latitude, first.longitude];
     }
 
     return [DEFAULT_CENTER.latitude, DEFAULT_CENTER.longitude];
