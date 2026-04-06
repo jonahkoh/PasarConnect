@@ -83,12 +83,11 @@ async def _verify_claim_eligibility(charity_id: int, listing_id: int) -> None:
 
 
 @app.post("/claims", response_model=ClaimResponse, status_code=201)
-async def create_claim(body: ClaimCreate):
-    """
-    JWT authentication is temporarily disabled for testing.
-    In production, re-enable by adding: token_payload: Annotated[dict, Depends(verify_jwt_token)]
-    and validating: jwt_charity_id = int(token_payload["sub"]); assert jwt_charity_id == body.charity_id
-    """
+async def create_claim(body: ClaimCreate, token_payload: Annotated[dict, Depends(verify_jwt_token)]):
+    jwt_charity_id = int(token_payload["sub"])
+    if jwt_charity_id != body.charity_id:
+        raise HTTPException(status_code=403, detail="Token charity_id mismatch")
+
     # 0) Block direct claims while the queue window is active for this listing.
     window_active, _listed_at, window_closes_at = await _is_window_active(body.listing_id)
     if window_active:

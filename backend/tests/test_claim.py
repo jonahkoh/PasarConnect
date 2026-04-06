@@ -51,6 +51,7 @@ class FakeAioRpcError(grpc.aio.AioRpcError):
 @pytest_asyncio.fixture()
 async def claim_client():
     # ── 1. Stub generated gRPC modules ──────────────────────────────────────
+    sys.modules.setdefault("aio_pika", MagicMock())   # publisher.py needs this at import time
     sys.modules.setdefault("inventory_pb2", MagicMock())
     sys.modules.setdefault("inventory_pb2_grpc", MagicMock())
 
@@ -77,6 +78,8 @@ async def claim_client():
     sys.modules.setdefault("claim_log_pb2_grpc", MagicMock())
     sys.modules.setdefault("verification_pb2", MagicMock())
     sys.modules.setdefault("verification_pb2_grpc", MagicMock())
+    sys.modules.setdefault("waitlist_pb2", MagicMock())
+    sys.modules.setdefault("waitlist_pb2_grpc", MagicMock())
 
     # ── 2. Mock waitlist modules before claim.py is loaded ──────────────────
     waitlist_db_mock = MagicMock()
@@ -86,6 +89,8 @@ async def claim_client():
     waitlist_router_mock = MagicMock()
     waitlist_router_mock.router = _APIRouter()          # real empty router — safe for include_router
     waitlist_router_mock.try_promote_next = AsyncMock(return_value=(None, 5))
+    waitlist_router_mock._is_window_active = AsyncMock(return_value=(False, "2099-01-01T00:00:00Z", "2099-01-01T00:05:00Z"))
+    waitlist_router_mock.has_active_queue = AsyncMock(return_value=False)
     sys.modules["waitlist_router"] = waitlist_router_mock
 
     # ── 3. Mock shared.jwt_auth ──────────────────────────────────────────────
