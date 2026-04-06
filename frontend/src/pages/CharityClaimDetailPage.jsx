@@ -42,6 +42,23 @@ export default function CharityClaimDetailPage({
 
       const updatedItem = onConfirmClaim(listing.id);
       const nextLabel = updatedItem?.quantityLabel ?? listing.quantityLabel;
+
+      // Persist to sessionStorage so claimHistory survives a page refresh.
+      try {
+        const stored = JSON.parse(sessionStorage.getItem("claimHistory") || "[]");
+        const entry = {
+          historyId: `${listing.id}-${Date.now()}`,
+          id: listing.id,
+          name: listing.name,
+          vendor: listing.vendor,
+          status: "PENDING COLLECTION",
+          claimedAtLabel: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        };
+        sessionStorage.setItem("claimHistory", JSON.stringify([entry, ...stored].slice(0, 50)));
+      } catch {
+        // sessionStorage write failure is non-fatal
+      }
+
       onToast?.(`Claim confirmed for "${listing.name}". Remaining: ${nextLabel}.`);
       navigate("/charity", { replace: true });
     } catch (err) {

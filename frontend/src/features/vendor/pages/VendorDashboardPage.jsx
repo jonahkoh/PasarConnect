@@ -9,7 +9,7 @@ import { useVendorDashboard } from "../hooks/useVendorDashboard";
 import { approveClaim, rejectClaim } from "../api/vendorApi";
 
 export default function VendorDashboardPage({ authUser, socket }) {
-  const { listings, setListings, notifications, setNotifications, isLoading, error } =
+  const { listings, setListings, notifications, setNotifications, isLoading, error, refetch } =
     useVendorDashboard(authUser, socket);
 
   const [showModal, setShowModal] = useState(false);
@@ -24,9 +24,8 @@ export default function VendorDashboardPage({ authUser, socket }) {
   function handleListingCreated(result) {
     setShowModal(false);
     showToast(`Listing #${result.listing_id} created. The charity queue window is now open.`);
-    // The listing:new socket event will prepend it to the listings list in real time.
-    // If the vendor is not yet subscribed (just created), a full reload is not needed —
-    // the inventory fetch in useVendorDashboard will pick it up on next mount.
+    // Re-fetch vendor listings so the new one appears immediately.
+    refetch();
   }
 
   async function handleApproveClaim(claimId) {

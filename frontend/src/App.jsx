@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { mockListings } from "./data/mockListings";
 import { mockPublicListings } from "./data/mockPublicListings";
-import { fetchListings, normalizeApiListing } from "./lib/inventoryApi";
+import { fetchListingById, fetchListings } from "./lib/inventoryApi";
 import { useSocket } from "./hooks/useSocket";
 import Toast from "./components/Toast";
 import VendorDashboardPage from "./features/vendor/pages/VendorDashboardPage";
@@ -60,10 +60,14 @@ export default function App() {
   useEffect(() => {
     if (!socket) return;
 
-    socket.on("listing:new", (raw) => {
-      const listing = normalizeApiListing(raw);
-      setCharityListings((prev) => [listing, ...prev]);
-      setPublicListings((prev) => [listing, ...prev]);
+    socket.on("listing:new", ({ listing_id }) => {
+      if (!listing_id) return;
+      fetchListingById(listing_id, authUser?.token)
+        .then((listing) => {
+          setCharityListings((prev) => [listing, ...prev]);
+          setPublicListings((prev) => [listing, ...prev]);
+        })
+        .catch((err) => console.warn("[listing:new] fetch failed:", err.message));
     });
 
     socket.on("listing:window_closed", ({ listing_id }) => {

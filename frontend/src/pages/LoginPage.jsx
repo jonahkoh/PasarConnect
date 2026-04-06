@@ -86,7 +86,8 @@ export default function LoginPage() {
       sessionStorage.setItem("authToken",  data.access_token);
       sessionStorage.setItem("authRole",   data.role);
       sessionStorage.setItem("authUserId", String(data.user_id));
-      navigate(selectedRole.destination);
+      // Full page navigation so App remounts and re-reads authUser from sessionStorage.
+      window.location.href = selectedRole.destination;
     } catch {
       setLoginError("Could not reach the login service. Check your connection and try again.");
     }

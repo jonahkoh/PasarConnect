@@ -6,6 +6,11 @@ export function useVendorDashboard(authUser, socket) {
   const [notifications, setNotifications] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
+  const [refreshCount, setRefreshCount] = useState(0);
+
+  function refetch() {
+    setRefreshCount((c) => c + 1);
+  }
 
   useEffect(() => {
     if (!authUser?.token) {
@@ -14,7 +19,6 @@ export function useVendorDashboard(authUser, socket) {
     }
 
     let isMounted = true;
-    const controller = new AbortController();
 
     async function loadDashboard() {
       setIsLoading(true);
@@ -32,11 +36,8 @@ export function useVendorDashboard(authUser, socket) {
     }
 
     loadDashboard();
-    return () => {
-      isMounted = false;
-      controller.abort();
-    };
-  }, [authUser?.token, authUser?.userId]);
+    return () => { isMounted = false; };
+  }, [authUser?.token, authUser?.userId, refreshCount]);
 
   // Subscribe to per-listing socket rooms once listings are loaded
   useEffect(() => {
@@ -46,6 +47,21 @@ export function useVendorDashboard(authUser, socket) {
     });
   }, [socket, listings]);
 
+  // Refresh vendor listings when a new listing is created (via socket event)
+  useEffect(() => {
+    if (!socket || !authUser?.token) return;
+
+    function handleListingNew() {
+      // Re-fetch so the new listing (if it belongs to this vendor) appears immediately
+      fetchVendorListings(authUser.token, authUser.userId)
+        .then((data) => setListings(data))
+        .catch(() => {});
+    }
+
+    socket.on("listing:new", handleListingNew);
+    return () => socket.off("listing:new", handleListingNew);
+  }, [socket, authUser?.token, authUser?.userId]);
+
   return {
     listings,
     setListings,
@@ -53,5 +69,6 @@ export function useVendorDashboard(authUser, socket) {
     setNotifications,
     isLoading,
     error,
+    refetch,
   };
 }

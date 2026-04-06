@@ -50,6 +50,18 @@ function authHeaders(token) {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
+// GET /api/inventory/:id — single listing by ID (requires JWT via Kong)
+export async function fetchListingById(id, token) {
+  const response = await fetch(`${API_BASE}/${id}`, {
+    headers: authHeaders(token),
+  });
+  if (!response.ok) {
+    throw new Error(`Listing ${id} fetch failed (${response.status})`);
+  }
+  const data = await response.json();
+  return normalizeApiListing(data);
+}
+
 // GET /api/inventory — all listings (requires JWT via Kong)
 export async function fetchListings(token, { signal } = {}) {
   const response = await fetch(API_BASE, {

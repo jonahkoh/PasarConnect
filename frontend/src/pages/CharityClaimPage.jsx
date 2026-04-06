@@ -102,7 +102,13 @@ export default function CharityClaimPage({
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [selectedCategories, setSelectedCategories] = useState([]);
   const [selectedPickupWindows, setSelectedPickupWindows] = useState([]);
-  const [claimHistory, setClaimHistory] = useState([]);
+  const [claimHistory, setClaimHistory] = useState(() => {
+    try {
+      return JSON.parse(sessionStorage.getItem("claimHistory") || "[]");
+    } catch {
+      return [];
+    }
+  });
   const [submissionSummary, setSubmissionSummary] = useState(null);
   const [selectedMapListingId, setSelectedMapListingId] = useState(
     listings.find(isCharityEligible)?.id ?? null
