@@ -220,7 +220,13 @@ async def _outsystems_register(path: str, body: dict) -> dict:
         logger.error("OutSystems register failed HTTP %s path=%s", response.status_code, path)
         raise HTTPException(status_code=response.status_code, detail=response.text or "Registration failed")
 
-    return response.json()
+    # OutSystems register endpoints may return an empty body on success.
+    if not response.content:
+        return {"message": "Registration successful"}
+    try:
+        return response.json()
+    except Exception:
+        return {"message": response.text or "Registration successful"}
 
 
 async def _outsystems_admin_call(path: str, body: dict) -> dict:

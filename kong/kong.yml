@@ -2,31 +2,20 @@ _format_version: "3.0"
 _transform: true
 
 # PasarConnect — Kong DB-less declarative config
-# Phase: Routing only (no auth plugins yet)
+# Phase 2: JWT enforcement on protected API routes
 #
-# External URL structure (through Kong :8000):
-#   /auth/*              → outsystems-service  :8007
-#   /admin/*             → outsystems-service  :8007  (admin approve/reject)
-#   /api/listings        → listing-service     :8008
-#   /api/claims/*        → claim-service       :8002
-#   /api/payments/*      → payment-service     :8003
-#   /webhooks/*          → payment-service     :8003  (Stripe webhook path unchanged)
-#   /api/inventory/*     → inventory-service   :8001
-#   /api/waitlist/*      → waitlist-service    :8010
+# Protected routes (require valid RS256 JWT from OutSystems):
+#   /api/listings, /api/claims, /api/payments, /api/waitlist, /api/inventory
 #
-# Health check paths (through Kong):
-#   /auth/health         → outsystems-service  :8007/health
-#   /api/listings/health → listing-service     :8008/health
-#   /api/claims/health   → claim-service       :8002/health
-#   /api/payments/health → payment-service     :8003/health
-#   /api/inventory/health→ inventory-service   :8001/health
-#   /api/waitlist/health → waitlist-service    :8010/health
+# Unprotected routes (no JWT required):
+#   /auth/*   — login/register (user must authenticate to receive a token)
+#   /admin/*  — OutSystems AdminAuth (protected by X-API-Key at the wrapper level)
+#   /webhooks — Stripe webhook (signed by Stripe, not a user JWT)
+#   /*/health — health checks (no auth needed)
 #
-# Path-stripping strategy:
-#   outsystems: strip_path=false — endpoints already start with /auth/ or /admin/
-#   others:     strip_path=true + service URL path prefix — Kong strips the /api/X
-#               prefix and the service URL re-adds the actual internal path prefix.
-#   health-specific Kong services point directly to /health on each upstream.
+# Kong JWT plugin lookup:
+#   Token header: Authorization: Bearer <token>
+#   Kong reads iss claim → finds credential with matching key → verifies RS256 signature
 
 services:
 
@@ -149,3 +138,64 @@ services:
         paths:
           - /api/waitlist/health
         strip_path: true
+
+# ── Consumers ─────────────────────────────────────────────────────────────────
+# One consumer represents all PasarConnect users.
+# Kong resolves the credential by matching the JWT iss claim to the credential key.
+
+consumers:
+  - username: pasarconnect-users
+    jwt_secrets:
+      - algorithm: RS256
+        key: FoodloopVerification           # must match iss claim in every OutSystems token
+        rsa_public_key: |
+          -----BEGIN PUBLIC KEY-----
+          MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAoyhXhdncQ/QQZgKjJ/Lf
+          UImMcbgVwqG9i+oKuMKVvEcG6Z34/5utcdgw9L93o5Z8z0h+SSgmtZtAHZRzi55B
+          JjsFBcgQPbACXJHoCDZPY96ZajCy6thrNBCHYSsPxQ3+cbMawuyHjJPiPeFA/EEj
+          kalyZ5tGSoGtoZiQyy+0iTlwT4suqRu9XENhDuEUq3W2Un+E64djgK7rZA57Cwpe
+          9mMmWrcVtI52qO3rjDFrtdxNc1uokxhk87G98+/EE960+tD80gtSJr21ri7UW5R9
+          M58Xf8MleHmC9oyvIiHSHRSxlsbQLGgHUyF85U60Ufl0HyPqTz3lS+rFUh305Gwb
+          GwIDAQAB
+          -----END PUBLIC KEY-----
+
+# ── Plugins ───────────────────────────────────────────────────────────────────
+# JWT plugin applied per-route on the 5 protected API route groups.
+# key_claim_name: iss → tells Kong to use the iss claim to look up the consumer credential.
+# claims_to_verify: exp → Kong rejects expired tokens (in addition to signature check).
+
+plugins:
+  - name: jwt
+    route: listing-api
+    config:
+      key_claim_name: iss
+      claims_to_verify:
+        - exp
+
+  - name: jwt
+    route: claim-api
+    config:
+      key_claim_name: iss
+      claims_to_verify:
+        - exp
+
+  - name: jwt
+    route: payment-api
+    config:
+      key_claim_name: iss
+      claims_to_verify:
+        - exp
+
+  - name: jwt
+    route: inventory-api
+    config:
+      key_claim_name: iss
+      claims_to_verify:
+        - exp
+
+  - name: jwt
+    route: waitlist-api
+    config:
+      key_claim_name: iss
+      claims_to_verify:
+        - exp
