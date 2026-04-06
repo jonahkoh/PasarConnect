@@ -52,6 +52,11 @@ export default function LoginPage() {
     if (!email.trim() || !password.trim()) return;
 
     setLoginError("");
+    // Clear any stale session before a new login attempt.
+    sessionStorage.removeItem("authToken");
+    sessionStorage.removeItem("authRole");
+    sessionStorage.removeItem("authUserId");
+
     try {
       const response = await fetch(LOGIN_PATHS[selectedRoleId], {
         method:  "POST",
@@ -61,7 +66,19 @@ export default function LoginPage() {
 
       if (!response.ok) {
         const err = await response.json().catch(() => ({}));
-        setLoginError(err.detail ?? `Login failed (${response.status})`);
+        const detail = typeof err.detail === "string" ? err.detail : null;
+
+        if (response.status === 401) {
+          setLoginError("Incorrect email or password. Please try again.");
+        } else if (response.status === 403 && detail?.toLowerCase().includes("pending approval")) {
+          setLoginError("Your account is pending admin approval. You'll be notified when it's activated.");
+        } else if (response.status === 403) {
+          setLoginError(detail ?? "You don't have access to this role. Please select the correct role.");
+        } else if (response.status === 503) {
+          setLoginError("Login service is temporarily unavailable. Please try again shortly.");
+        } else {
+          setLoginError(detail ?? `Login failed (${response.status}). Please try again.`);
+        }
         return;
       }
 
@@ -71,7 +88,7 @@ export default function LoginPage() {
       sessionStorage.setItem("authUserId", String(data.user_id));
       navigate(selectedRole.destination);
     } catch {
-      setLoginError("Could not reach the login service. Check your connection.");
+      setLoginError("Could not reach the login service. Check your connection and try again.");
     }
   }
 

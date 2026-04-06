@@ -280,6 +280,11 @@ async def charity_login(body: LoginRequest):
         )
 
     token, user_id, role = await _outsystems_login(body.email, body.password)
+    if role != "charity":
+        raise HTTPException(
+            status_code=403,
+            detail="This account is not registered as a charity. Please select the correct role.",
+        )
     status = await _get_charity_status_grpc(charity_id=user_id)
     return CharityLoginResponse(access_token=token, user_id=user_id, role=role, status=status)
 
@@ -301,6 +306,11 @@ async def vendor_login(body: LoginRequest):
         )
 
     token, user_id, role = await _outsystems_login(body.email, body.password)
+    if role != "vendor":
+        raise HTTPException(
+            status_code=403,
+            detail="This account is not registered as a vendor. Please select the correct role.",
+        )
     status = await _get_vendor_status_grpc(vendor_id=user_id)
     return VendorLoginResponse(access_token=token, user_id=user_id, role=role, status=status)
 
@@ -320,6 +330,11 @@ async def public_login(body: LoginRequest):
         )
 
     token, user_id, role = await _outsystems_login(body.email, body.password)
+    if role != "public":
+        raise HTTPException(
+            status_code=403,
+            detail="This account is not registered as a public user. Please select the correct role.",
+        )
     return PublicLoginResponse(access_token=token, user_id=user_id, role=role)
 
 
