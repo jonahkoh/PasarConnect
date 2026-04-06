@@ -152,8 +152,6 @@ services:
         protocols:
           - http
           - https
-          - ws
-          - wss
 
 # ── Consumers ─────────────────────────────────────────────────────────────────
 # One consumer represents all PasarConnect users.
