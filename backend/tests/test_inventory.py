@@ -425,7 +425,7 @@ def _listing_payload(**overrides):
         "vendor_id": "vendor_1",
         "title": "Fresh Bread",
         "quantity": 5,
-        "expiry_date": FUTURE_DATE,
+        "expiry": FUTURE_DATE,
     }
     base.update(overrides)
     return base
@@ -471,7 +471,7 @@ async def test_update_listing_not_found(http_db):
 
 async def test_update_listing_past_expiry_rejected(http_db):
     created = (await http_db.post("/listings", json=_listing_payload())).json()
-    r = await http_db.put(f"/listings/{created['id']}", json={"expiry_date": PAST_DATE})
+    r = await http_db.put(f"/listings/{created['id']}", json={"expiry": PAST_DATE})
     assert r.status_code == 422
 
 

@@ -61,9 +61,8 @@ async def lifespan(app: FastAPI):
                 $$;
                 """
             )
+        )
         await conn.run_sync(Base.metadata.create_all)
-
-    await _seed_demo_listings()
 
     # Start the gRPC server alongside the HTTP server (same process, same event loop)
     grpc_server = await start_grpc_server()
@@ -81,31 +80,6 @@ app = FastAPI(title="PasarConnect — Inventory Service", lifespan=lifespan)
 @app.get("/health")
 async def health_check():
     return {"status": "healthy", "service": "inventory"}
-
-
-def _get_search_precision(radius_km: float) -> int:
-    # Higher radius = lower precision = larger area
-    if radius_km >= 10:
-        return 5  # ~4.8 km
-    if radius_km >= 5:
-        return 6  # ~1.2 km
-    if radius_km >= 2:
-        return 7  # ~150 m
-    if radius_km >= 0.5:
-        return 8  # ~20 m
-    return 9  # ~2.4 m
-
-
-def _get_nearby_geohashes(latitude: float, longitude: float, radius_km: float) -> List[str]:
-    precision = _get_search_precision(radius_km)
-    center_geohash = geohash2.encode(latitude, longitude, precision=precision)
-
-    try:
-        nearby_geohashes = geohash2.neighbors(center_geohash)
-        nearby_geohashes.add(center_geohash)
-        return list(nearby_geohashes)
-    except Exception:
-        return [center_geohash]
 
 
 @app.get("/listings", response_model=List[FoodListingResponse])
@@ -183,7 +157,18 @@ async def create_listing(
     payload: FoodListingCreate,
     db: AsyncSession = Depends(get_db),
 ):
-    new_listing = FoodListing(**payload.model_dump())
+    data = payload.model_dump(exclude={"address"})
+
+    # Geocode address → lat/lng if provided (takes priority over raw coordinates)
+    if payload.address:
+        try:
+            lat, lng = await geocode_address(payload.address)
+            data["latitude"] = lat
+            data["longitude"] = lng
+        except GeocodingError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+
+    new_listing = FoodListing(**data)
 
     # Calculate geohash if location is provided
     if new_listing.latitude is not None and new_listing.longitude is not None:
@@ -205,8 +190,18 @@ async def update_listing(
     listing = result.scalar_one_or_none()
     if listing is None:
         raise HTTPException(status_code=404, detail=f"Listing {listing_id} not found.")
-    # Update only provided fields
-    update_data = payload.model_dump(exclude_unset=True)
+    # Update only provided fields (exclude address — handled separately)
+    update_data = payload.model_dump(exclude_unset=True, exclude={"address"})
+
+    # Geocode address → lat/lng if provided
+    if payload.address:
+        try:
+            lat, lng = await geocode_address(payload.address)
+            update_data["latitude"] = lat
+            update_data["longitude"] = lng
+        except GeocodingError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+
     for field, value in update_data.items():
         setattr(listing, field, value)
 
@@ -232,4 +227,33 @@ async def delete_listing(
 
     await db.delete(listing)
     await db.commit()
+
+
+@app.get("/listings/map/live", response_model=List[FoodListingResponse])
+async def get_live_map_listings(
+    latitude: Optional[float] = Query(None, ge=-90, le=90, description="Filter center latitude"),
+    longitude: Optional[float] = Query(None, ge=-180, le=180, description="Filter center longitude"),
+    radius_km: float = Query(5.0, ge=0.1, le=100, description="Search radius in kilometers"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return all AVAILABLE listings that have coordinates (map pins), optionally filtered by proximity."""
+    if (latitude is None) != (longitude is None):
+        raise HTTPException(status_code=422, detail="Both latitude and longitude must be provided together.")
+
+    query = (
+        select(FoodListing)
+        .where(FoodListing.status == ListingStatus.AVAILABLE)
+        .where(FoodListing.latitude.is_not(None))
+        .where(FoodListing.longitude.is_not(None))
+        .order_by(FoodListing.created_at.desc())
+    )
+
+    if latitude is not None and longitude is not None:
+        center_geohash = geohash2.encode(latitude, longitude, precision=GEOHASH_STORE_PRECISION)
+        nearby_geohashes = _geohash_neighbors(center_geohash)
+        nearby_geohashes.add(center_geohash)
+        query = query.where(FoodListing.geohash.in_(list(nearby_geohashes)))
+
+    result = await db.execute(query)
+    return result.scalars().all()
 
