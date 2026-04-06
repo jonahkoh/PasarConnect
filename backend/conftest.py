@@ -17,6 +17,8 @@ VERIFICATION_PATH  = os.path.join(BACKEND_DIR, "verification")
 _SHARED_MODULES = [
     "database", "models", "schemas",
     "inventory_client", "publisher", "lock_service", "grpc_server",
+    "verification_client", "claim_log_client", "payment_log_client",
+    "waitlist_grpc_client", "waitlist_router", "waitlist_db",
     "claim_app", "payment_app", "payment_log_app", "claim_log_app",
 ]
 
