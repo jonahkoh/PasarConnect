@@ -46,7 +46,10 @@ from contextlib import asynccontextmanager
 import grpc
 import httpx
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from typing import Annotated
+
+from fastapi import Depends, FastAPI, HTTPException
+from shared.jwt_auth import verify_jwt_token
 
 from math import isclose
 
@@ -139,7 +142,10 @@ async def _require_success_payment_log(transaction_id: str, action: str):
 # ── Workflow 1: Intent Creation ───────────────────────────────────────────────
 
 @app.post("/payments/intent", status_code=201)
-async def create_payment_intent(payload: PaymentIntentRequest):
+async def create_payment_intent(
+    payload: PaymentIntentRequest,
+    token_payload: Annotated[dict, Depends(verify_jwt_token)],
+):
     """
     Called by the UI when a public user selects a listing to purchase.
 
@@ -150,9 +156,12 @@ async def create_payment_intent(payload: PaymentIntentRequest):
       3. Tell the Payment Log to persist a PENDING record.
       4. Return the client_secret so the UI can render the Stripe payment form.
     """
+    # Identity is taken from the JWT sub claim — never from the request body.
+    user_id = int(token_payload["sub"])
+
     # Step 0 — Verify user eligibility before touching inventory
     try:
-        await verification_client.verify_public_user(payload.user_id, payload.listing_id)
+        await verification_client.verify_public_user(user_id, payload.listing_id)
     except UserNotEligibleError as exc:
         raise HTTPException(status_code=403, detail=f"User ineligible: {exc.reason}")
 
@@ -210,7 +219,7 @@ async def create_payment_intent(payload: PaymentIntentRequest):
             listing_id=payload.listing_id,
             listing_version=new_version,
             amount=payload.amount,
-            user_id=payload.user_id,
+            user_id=user_id,
         )
     except grpc.aio.AioRpcError as exc:
         raise payment_log_client.map_payment_log_grpc_error(exc)

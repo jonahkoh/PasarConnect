@@ -67,9 +67,19 @@ async def payment_client():
         sys.modules["payment_log_pb2"] = payment_log_pb2
     sys.modules.setdefault("payment_log_pb2_grpc", MagicMock())
 
+    # Stub shared.jwt_auth so the import inside payment.py succeeds at module load.
+    _mock_jwt_fn = AsyncMock(return_value={"sub": "42"})
+    _shared_jwt_mock = MagicMock()
+    _shared_jwt_mock.verify_jwt_token = _mock_jwt_fn
+    sys.modules.setdefault("shared", MagicMock())
+    sys.modules["shared.jwt_auth"] = _shared_jwt_mock
+
     spec = _ilu.spec_from_file_location("payment_app", os.path.join(PAYMENT_DIR, "payment.py"))
     payment_mod = _ilu.module_from_spec(spec)
     spec.loader.exec_module(payment_mod)
+
+    # Override JWT dependency — every test request arrives with sub="42" (user_id=42).
+    payment_mod.app.dependency_overrides[payment_mod.verify_jwt_token] = lambda: {"sub": "42"}
 
     with (
         patch.object(payment_mod.inventory_client, "lock_listing_pending_payment", new_callable=AsyncMock) as mock_soft_lock,
@@ -147,13 +157,14 @@ async def test_health(payment_client):
 
 @pytest.mark.asyncio
 async def test_create_payment_intent_success(payment_client):
-    payload = {"user_id": 99, "listing_id": 101, "listing_version": 3, "amount": 20.5}
+    # user_id is no longer in the body — it comes from the JWT sub claim (mocked as 42).
+    payload = {"listing_id": 101, "listing_version": 3, "amount": 20.5}
 
     response = await payment_client["client"].post("/payments/intent", json=payload)
 
     assert response.status_code == 201
     assert response.json() == {"client_secret": "pi_mock_123_secret"}
-    payment_client["mock_verify_user"].assert_called_once_with(99, 101)
+    payment_client["mock_verify_user"].assert_called_once_with(42, 101)
     payment_client["mock_get_listing"].assert_called_once_with(101)
     payment_client["mock_soft_lock"].assert_called_once_with(101, 3)
     payment_client["mock_post"].assert_called_once()
@@ -162,7 +173,7 @@ async def test_create_payment_intent_success(payment_client):
         listing_id=101,
         listing_version=7,
         amount=20.5,
-        user_id=99,
+        user_id=42,
     )
 
 
@@ -174,7 +185,8 @@ async def test_create_payment_intent_blocked_during_queue_window(payment_client)
     recent = (_dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(seconds=5)).isoformat()
     payment_client["mock_get_listing"].return_value = SimpleNamespace(listed_at=recent)
 
-    payload = {"user_id": 99, "listing_id": 101, "listing_version": 3, "amount": 20.5}
+    # Queue window active → 409.  user_id omitted — comes from JWT.
+    payload = {"listing_id": 101, "listing_version": 3, "amount": 20.5}
     response = await payment_client["client"].post("/payments/intent", json=payload)
 
     assert response.status_code == 409

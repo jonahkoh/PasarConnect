@@ -3,11 +3,13 @@ import json
 import os
 from contextlib import asynccontextmanager
 from datetime import datetime
+from typing import Annotated
 
 import aio_pika
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel, Field, field_validator, model_validator
+from shared.jwt_auth import verify_jwt_token
 
 import inventory_client
 
@@ -60,7 +62,7 @@ app = FastAPI(title="PasarConnect - Listing Service", lifespan=lifespan)
 
 
 class ListingCreateRequest(BaseModel):
-    vendor_id: str = Field(..., min_length=1, max_length=64)
+    # vendor_id is no longer in the body — it is extracted from the JWT sub claim.
     title: str = Field(..., min_length=1, max_length=255)
     description: str | None = Field(default=None, max_length=1024)
     quantity: int | None = Field(default=None, gt=0)
@@ -142,9 +144,16 @@ async def _publish_created_events(listing_id: int) -> None:
 
 
 @app.post("/api/listings", response_model=ListingCreateResponse, status_code=201)
-async def create_listing(payload: ListingCreateRequest):
+async def create_listing(
+    payload: ListingCreateRequest,
+    token_payload: Annotated[dict, Depends(verify_jwt_token)],
+):
+    # Vendor identity comes from the signed JWT — never from the request body.
+    vendor_id = str(token_payload["sub"])
     try:
-        listing_id = await inventory_client.create_listing(payload.model_dump(mode="json"))
+        listing_id = await inventory_client.create_listing(
+            {**payload.model_dump(mode="json"), "vendor_id": vendor_id}
+        )
     except inventory_client.InventoryServiceError as exc:
         await _publish_error_event(
             error_type="inventory_unavailable",

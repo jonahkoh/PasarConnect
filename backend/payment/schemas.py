@@ -6,7 +6,6 @@ from pydantic import BaseModel, Field
 
 class PaymentIntentRequest(BaseModel):
     """Sent by the UI when a public user wants to purchase a listing."""
-    user_id         : int   = Field(..., gt=0)
     listing_id      : int   = Field(..., gt=0)
     listing_version : int   = Field(..., ge=0)
     amount          : float = Field(..., gt=0)
