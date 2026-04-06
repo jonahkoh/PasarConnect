@@ -5,6 +5,7 @@ import FoodCard from "../components/FoodCard";
 import CharityFilterSidebar from "../components/CharityFilterSidebar";
 import ClaimSummaryCard from "../components/ClaimSummaryCard";
 import LiveFoodMap from "../components/LiveFoodMap";
+import { postArrive } from "../lib/claimsApi";
 
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -93,6 +94,7 @@ export default function CharityClaimPage({
   onApplyClaimSuccesses,
   isLoading = false,
   socket = null,
+  authUser = null,
 }) {
   const navigate = useNavigate();
   const [search, setSearch] = useState("");
@@ -113,6 +115,54 @@ export default function CharityClaimPage({
   const [selectedMapListingId, setSelectedMapListingId] = useState(
     listings.find(isCharityEligible)?.id ?? null
   );
+  // Track per-claim arrive submission state to avoid double-clicks.
+  const [arrivingClaimId, setArrivingClaimId] = useState(null);
+
+  // Derived: active claims that are still pending collection or awaiting vendor approval.
+  const activeClaims = useMemo(
+    () => claimHistory.filter(
+      (c) => c.claim_id && (c.status === "PENDING_COLLECTION" || c.status === "AWAITING_VENDOR_APPROVAL")
+    ),
+    [claimHistory]
+  );
+
+  function updateClaimStatus(claimId, newStatus) {
+    setClaimHistory((prev) => {
+      const updated = prev.map((c) => c.claim_id === claimId ? { ...c, status: newStatus } : c);
+      try { sessionStorage.setItem("claimHistory", JSON.stringify(updated)); } catch { /* non-fatal */ }
+      return updated;
+    });
+  }
+
+  // Listen for vendor approval / rejection updates on active claims.
+  useEffect(() => {
+    if (!socket) return;
+    function handleCompleted(payload) {
+      updateClaimStatus(payload.claim_id, "COMPLETED");
+    }
+    function handleCancelled(payload) {
+      // claim:cancelled fires on vendor reject AND on charity cancel — guard by claim_id
+      if (payload.claim_id) updateClaimStatus(payload.claim_id, "CANCELLED");
+    }
+    socket.on("claim:completed", handleCompleted);
+    socket.on("claim:cancelled", handleCancelled);
+    return () => {
+      socket.off("claim:completed", handleCompleted);
+      socket.off("claim:cancelled", handleCancelled);
+    };
+  }, [socket]);
+
+  async function handleArrive(claim) {
+    setArrivingClaimId(claim.claim_id);
+    try {
+      await postArrive(claim.claim_id, authUser?.token);
+      updateClaimStatus(claim.claim_id, "AWAITING_VENDOR_APPROVAL");
+    } catch {
+      // Non-fatal — status stays PENDING_COLLECTION and user can retry.
+    } finally {
+      setArrivingClaimId(null);
+    }
+  }
 
   function toggleValue(setter, currentValues, value) {
     setter(
@@ -280,6 +330,34 @@ export default function CharityClaimPage({
             individually in real time.
           </p>
         </div>
+
+        {activeClaims.map((claim) => (
+          <div
+            key={claim.claim_id}
+            className={`active-claim-banner${claim.status === "AWAITING_VENDOR_APPROVAL" ? " active-claim-banner--waiting" : ""}`}
+            role="status"
+          >
+            <div className="active-claim-banner__info">
+              <strong>{claim.name}</strong>
+              <span>Vendor: {claim.vendor}</span>
+              {claim.status === "AWAITING_VENDOR_APPROVAL" ? (
+                <span className="active-claim-banner__status">Waiting for vendor to confirm your arrival…</span>
+              ) : (
+                <span className="active-claim-banner__status">Ready to collect — head to the vendor and mark your arrival.</span>
+              )}
+            </div>
+            {claim.status === "PENDING_COLLECTION" && (
+              <button
+                type="button"
+                className="landing-button landing-button--primary"
+                onClick={() => handleArrive(claim)}
+                disabled={arrivingClaimId === claim.claim_id}
+              >
+                {arrivingClaimId === claim.claim_id ? "Notifying…" : "I've Arrived"}
+              </button>
+            )}
+          </div>
+        ))}
 
         <LiveFoodMap
           listings={filteredMapListings}

@@ -344,16 +344,28 @@ async def noshow_claim(claim_id: int):
 @app.post("/claims/{claim_id}/arrive")
 async def arrive_claim(claim_id: int):
     try:
-        result = await claim_log_client.update_claim_status(
+        claim = await claim_log_client.get_claim_log(claim_id)
+    except grpc.aio.AioRpcError as exc:
+        raise claim_log_client.map_claim_log_grpc_error(exc)
+
+    try:
+        await claim_log_client.update_claim_status(
             claim_id=claim_id,
             new_status=claim_log_pb2.AWAITING_VENDOR_APPROVAL,
         )
     except grpc.aio.AioRpcError as exc:
         raise claim_log_client.map_claim_log_grpc_error(exc)
 
+    # Notify vendor that charity is physically on-site.
+    await publisher.publish_claim_arrived(
+        claim_id=claim_id,
+        listing_id=claim.listing_id,
+        charity_id=claim.charity_id,
+    )
+
     return {
         "status": "ok",
-        "claim_id": result.claim_id,
+        "claim_id": claim_id,
         "new_status": "AWAITING_VENDOR_APPROVAL",
     }
 
@@ -392,6 +404,13 @@ async def approve_claim(claim_id: int):
 
     # Notify queue members that the item is gone
     await publisher.publish_waitlist_cancelled(listing_id_for_waitlist)
+
+    # Notify the collecting charity that their claim is complete
+    await publisher.publish_claim_completed(
+        claim_id=result.claim_id,
+        listing_id=result.listing_id,
+        charity_id=charity_id,
+    )
 
     return {
         "status": "ok",

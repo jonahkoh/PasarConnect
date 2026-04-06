@@ -49,9 +49,10 @@ export default function CharityClaimDetailPage({
         const entry = {
           historyId: `${listing.id}-${Date.now()}`,
           id: listing.id,
+          claim_id: result.id,
           name: listing.name,
           vendor: listing.vendor,
-          status: "PENDING COLLECTION",
+          status: "PENDING_COLLECTION",
           claimedAtLabel: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
         };
         sessionStorage.setItem("claimHistory", JSON.stringify([entry, ...stored].slice(0, 50)));

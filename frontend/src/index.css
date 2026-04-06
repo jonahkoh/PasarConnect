@@ -357,6 +357,47 @@ a {
   margin-bottom: 26px;
 }
 
+/* Active-claim banner — shown at top of charity page when a claim is pending */
+.active-claim-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  background: #e8f5ee;
+  border: 1.5px solid #4caf7a;
+  border-radius: 10px;
+  padding: 14px 20px;
+  margin-bottom: 18px;
+}
+
+.active-claim-banner--waiting {
+  background: #fff8e6;
+  border-color: #e0a020;
+}
+
+.active-claim-banner__info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-family: Inter, system-ui, sans-serif;
+  font-size: 0.95rem;
+  color: #1a3a28;
+}
+
+.active-claim-banner--waiting .active-claim-banner__info {
+  color: #5a3e00;
+}
+
+.active-claim-banner__status {
+  font-size: 0.85rem;
+  color: #4caf7a;
+  margin-top: 2px;
+}
+
+.active-claim-banner--waiting .active-claim-banner__status {
+  color: #b07800;
+}
+
 .catalog-page__intro h1 {
   margin: 0;
   font-size: 2.2rem;

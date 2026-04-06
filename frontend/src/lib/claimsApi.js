@@ -73,3 +73,19 @@ export async function getWaitlistPosition({ listing_id, charity_id, token }) {
   const entries = await res.json();
   return entries.find((e) => e.charity_id === charity_id) ?? null;
 }
+
+/**
+ * POST /api/claims/{claim_id}/arrive
+ * Signals that the charity has arrived on-site for collection.
+ */
+export async function postArrive(claim_id, token) {
+  const res = await fetch(`${CLAIMS_BASE}/${claim_id}/arrive`, {
+    method: "POST",
+    headers: authHeaders(token),
+  });
+  const data = await res.json().catch(() => null);
+  if (!res.ok) {
+    throw new Error(extractMessage(data, `Arrive notification failed (${res.status})`));
+  }
+  return data;
+}

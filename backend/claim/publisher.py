@@ -124,6 +124,28 @@ async def publish_waitlist_offered(listing_id: int, charity_id: int) -> None:
     await _publish("claim.waitlist.offered", payload)
 
 
+async def publish_claim_arrived(claim_id: int, listing_id: int, charity_id: int) -> None:
+    """Fired when a charity marks themselves as arrived for collection."""
+    payload = {
+        "event": "claim.arrived",
+        "claim_id": claim_id,
+        "listing_id": listing_id,
+        "charity_id": charity_id,
+    }
+    await _publish("claim.arrived", payload)
+
+
+async def publish_claim_completed(claim_id: int, listing_id: int, charity_id: int) -> None:
+    """Fired when a vendor approves a collection (claim marked COMPLETED)."""
+    payload = {
+        "event": "claim.completed",
+        "claim_id": claim_id,
+        "listing_id": listing_id,
+        "charity_id": charity_id,
+    }
+    await _publish("claim.completed", payload)
+
+
 async def publish_waitlist_cancelled(listing_id: int) -> None:
     """
     Fired when an item is sold and all remaining queue members are cancelled.

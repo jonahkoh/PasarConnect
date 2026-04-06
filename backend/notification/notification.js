@@ -167,6 +167,14 @@ function handleClaimEvent(routingKey, payload) {
     case "claim.waitlist.cancelled":
       emitToRooms(`listing:${payload.listing_id}`, "claim:waitlist_closed", payload);
       break;
+    case "claim.arrived":
+      // Charity is on-site; notify the vendor via the per-listing room they subscribed to.
+      emitToRooms(`listing:${payload.listing_id}`, "claim:arrived", payload);
+      break;
+    case "claim.completed":
+      // Vendor approved collection; notify the charity.
+      emitToRooms(`charity:${payload.charity_id}`, "claim:completed", payload);
+      break;
     case "claim.failure":
       console.warn("[claim.failure]", JSON.stringify(payload));
       break;
@@ -252,6 +260,7 @@ async function startConsumer() {
   // Queue: claim events (claim.success, claim.cancelled, claim.waitlist.*)
   await ch.assertQueue(QUEUES.claimEvents, { durable: true });
   for (const key of ["claim.success", "claim.cancelled", "claim.failure",
+                     "claim.arrived", "claim.completed",
                      "claim.waitlist.promoted", "claim.waitlist.offered", "claim.waitlist.cancelled"]) {
     await ch.bindQueue(QUEUES.claimEvents, PASARCONNECT_EXCHANGE, key);
   }

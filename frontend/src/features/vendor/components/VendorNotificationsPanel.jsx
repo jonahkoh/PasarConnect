@@ -10,6 +10,19 @@ export default function VendorNotificationsPanel({ notifications, socket, onNoti
   useEffect(() => {
     if (!socket) return;
 
+    function handleClaimArrived(payload) {
+      onNotification((prev) => [
+        {
+          id: `claim-arrived-${payload.claim_id ?? Date.now()}`,
+          type: "claim",
+          title: "Charity has arrived",
+          message: `Charity #${payload.charity_id} is at your door for listing #${payload.listing_id}. Please approve or reject their collection below.`,
+          timeLabel: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        },
+        ...prev,
+      ]);
+    }
+
     function handleClaimSuccess(payload) {
       onNotification((prev) => [
         {
@@ -52,11 +65,13 @@ export default function VendorNotificationsPanel({ notifications, socket, onNoti
       ]);
     }
 
+    socket.on("claim:arrived",   handleClaimArrived);
     socket.on("claim:success",   handleClaimSuccess);
     socket.on("claim:cancelled", handleClaimCancelled);
     socket.on("payment:success", handlePaymentSuccess);
 
     return () => {
+      socket.off("claim:arrived",   handleClaimArrived);
       socket.off("claim:success",   handleClaimSuccess);
       socket.off("claim:cancelled", handleClaimCancelled);
       socket.off("payment:success", handlePaymentSuccess);

@@ -22,6 +22,12 @@ export default function VendorDashboardPage({ authUser, socket }) {
   const { listings, setListings, notifications, setNotifications, isLoading, error, refetch } =
     useVendorDashboard(authUser, socket);
 
+  // Subscribe to each listing's socket room so claim:arrived events reach this vendor.
+  useEffect(() => {
+    if (!socket || listings.length === 0) return;
+    listings.forEach((l) => socket.emit("subscribe:listing", { listing_id: l.id }));
+  }, [socket, listings]);
+
   const [showModal, setShowModal] = useState(false);
   const [toast, setToast] = useState(null);
   const [actionError, setActionError] = useState(null); // { claimId, message }

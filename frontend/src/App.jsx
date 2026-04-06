@@ -258,6 +258,7 @@ export default function App() {
               onApplyClaimSuccesses={applyClaimSuccesses}
               isLoading={isListingsLoading}
               socket={socket}
+              authUser={authUser}
             />
           }
         />
