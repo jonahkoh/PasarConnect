@@ -322,10 +322,13 @@ services:
     ports:
       - "8011:8011"
     environment:
-      RABBITMQ_HOST: ${RABBITMQ_HOST}
-      RABBITMQ_USER: ${RABBITMQ_USER}
-      RABBITMQ_PASS: ${RABBITMQ_PASS}
-      PORT:          8011
+      RABBITMQ_HOST:   ${RABBITMQ_HOST}
+      RABBITMQ_USER:   ${RABBITMQ_USER}
+      RABBITMQ_PASS:   ${RABBITMQ_PASS}
+      PORT:            8011
+      PUBLIC_KEY_PATH: ${PUBLIC_KEY_PATH}
+    volumes:
+      - ./keys:/app/keys:ro
     depends_on:
       rabbitmq:
         condition: service_healthy

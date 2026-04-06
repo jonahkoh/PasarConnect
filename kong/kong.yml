@@ -139,6 +139,22 @@ services:
           - /api/waitlist/health
         strip_path: true
 
+  # ── Notification Service WebSocket (port 8011) ────────────────────────────
+  # Socket.io endpoint — handles both HTTP long-polling and WebSocket upgrade.
+  # NO JWT plugin: Socket.io itself verifies the RS256 token at handshake time.
+  - name: notification-service
+    url: http://notification-service:8011
+    routes:
+      - name: notification-ws
+        paths:
+          - /socket.io
+        strip_path: false
+        protocols:
+          - http
+          - https
+          - ws
+          - wss
+
 # ── Consumers ─────────────────────────────────────────────────────────────────
 # One consumer represents all PasarConnect users.
 # Kong resolves the credential by matching the JWT iss claim to the credential key.

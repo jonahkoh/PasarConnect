@@ -1,6 +1,6 @@
 {
   "name": "notification",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "main": "notification.js",
   "scripts": {
     "start": "node notification.js"
@@ -8,9 +8,11 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "description": "",
+  "description": "PasarConnect notification service — RabbitMQ consumer + Socket.io live push",
   "dependencies": {
     "amqplib": "^0.10.4",
-    "express": "^4.18.2"
+    "express": "^4.18.2",
+    "jsonwebtoken": "^9.0.2",
+    "socket.io": "^4.8.1"
   }
 }

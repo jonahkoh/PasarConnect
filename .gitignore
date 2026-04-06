@@ -33,8 +33,14 @@ htmlcov/
 .DS_Store
 Thumbs.db
 
-# ── Private Key ────────────────────────────────────────────────────────────────────────
+# ── Private Keys ─────────────────────────────────────────────────────────────
 keys/private.pem
+keys/test_private.pem
+keys/test_public.pem
+
+# ── Local dev test utilities (not part of the application) ───────────────────
+gen_test_token.js
+test_socket.js
 
 # ── .env ────────────────────────────────────────────────────────────────────────
 .env
