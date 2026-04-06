@@ -11,8 +11,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy service source
 COPY listing/ ./listing/
+# Copy shared utilities (jwt_auth, etc.)
+COPY shared/ ./shared/
 
 WORKDIR /app/listing
+
+# Make the shared/ package importable from /app
+ENV PYTHONPATH=/app
 
 # Generate gRPC stubs from the service's own proto copy
 RUN python -m grpc_tools.protoc \
