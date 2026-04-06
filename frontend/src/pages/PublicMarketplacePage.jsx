@@ -18,6 +18,7 @@ export default function PublicMarketplacePage({
   getCartQuantity,
   onAddToCart,
   onUpdateQuantity,
+  isLoading = false,
 }) {
   const navigate = useNavigate();
   const [addingId, setAddingId] = useState(null);
@@ -145,6 +146,7 @@ export default function PublicMarketplacePage({
           listings={filteredMapListings}
           selectedListingId={selectedMapListingId}
           onSelectListing={setSelectedMapListingId}
+          isLoading={isLoading}
           eyebrow="Marketplace map"
           title="Discounted food pickup spots"
           subcopy="Browse the live marketplace visually, inspect rough pickup areas, and open a listing before adding it to your cart."
@@ -202,7 +204,9 @@ export default function PublicMarketplacePage({
 
             {message && <div className="alert-success">{message}</div>}
 
-            {filteredListings.length === 0 ? (
+            {isLoading ? (
+              <div className="empty-state" aria-live="polite">Loading marketplace listings…</div>
+            ) : filteredListings.length === 0 ? (
               <div className="empty-state">No matching marketplace items found.</div>
             ) : (
               <section className="catalog-grid">

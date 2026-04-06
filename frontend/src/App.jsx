@@ -1,7 +1,8 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { mockListings } from "./data/mockListings";
 import { mockPublicListings } from "./data/mockPublicListings";
+import { fetchListings } from "./lib/inventoryApi";
 import VendorDashboardPage from "./features/vendor/pages/VendorDashboardPage";
 import CharityClaimPage from "./pages/CharityClaimPage";
 import CharityClaimDetailPage from "./pages/CharityClaimDetailPage";
@@ -28,7 +29,40 @@ function decrementQuantityLabel(label) {
 
 export default function App() {
   const [charityListings, setCharityListings] = useState(mockListings);
-  const [publicListings] = useState(mockPublicListings);
+  const [publicListings, setPublicListings] = useState(mockPublicListings);
+
+  // Read auth token written by LoginPage into sessionStorage.
+  // const is intentional: authUser never changes during a session.
+  const [authUser] = useState(() => {
+    const token  = sessionStorage.getItem("authToken");
+    const role   = sessionStorage.getItem("authRole");
+    const userId = sessionStorage.getItem("authUserId");
+    return token ? { token, role, userId } : null;
+  });
+
+  // Start in loading state only when a token is present so the pages don't
+  // flash mock data before real listings arrive.
+  const [isListingsLoading, setIsListingsLoading] = useState(Boolean(authUser?.token));
+
+  useEffect(() => {
+    if (!authUser?.token) return;
+    const controller = new AbortController();
+    setIsListingsLoading(true);
+    fetchListings(authUser.token, { signal: controller.signal })
+      .then((data) => {
+        setCharityListings(data);
+        setPublicListings(data);
+      })
+      .catch((err) => {
+        if (err.name !== "AbortError") {
+          console.error("[inventory] fetch failed:", err.message);
+          // Keep mock data on failure so the UI stays usable.
+        }
+      })
+      .finally(() => setIsListingsLoading(false));
+    return () => controller.abort();
+  }, [authUser]);
+
   const [selectedClaimIds, setSelectedClaimIds] = useState([]);
   const [marketplaceCart, setMarketplaceCart] = useState([]);
 
@@ -171,6 +205,7 @@ export default function App() {
               onToggleClaimQueue={toggleClaimQueue}
               onRemoveFromClaimQueue={removeFromClaimQueue}
               onApplyClaimSuccesses={applyClaimSuccesses}
+              isLoading={isListingsLoading}
             />
           }
         />
@@ -195,6 +230,7 @@ export default function App() {
               getCartQuantity={getCartQuantity}
               onAddToCart={addToMarketplaceCart}
               onUpdateQuantity={updateMarketplaceCartItem}
+              isLoading={isListingsLoading}
             />
           }
         />

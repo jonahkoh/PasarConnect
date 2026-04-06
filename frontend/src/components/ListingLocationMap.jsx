@@ -8,6 +8,10 @@ const DEFAULT_CENTER = {
   longitude: 103.8198,
 };
 
+// If VITE_MAPBOX_TOKEN is set in .env.local, Mapbox Streets tiles are used.
+// Otherwise the map falls back to OpenStreetMap (no API key required).
+const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN;
+
 function openInMapsUrl(latitude, longitude, label) {
   const destination = encodeURIComponent(`${latitude},${longitude}`);
   const name = encodeURIComponent(label);
@@ -110,10 +114,19 @@ export default function ListingLocationMap({
       attributionControl
       className={className}
     >
-      <TileLayer
-        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-      />
+      {MAPBOX_TOKEN ? (
+        <TileLayer
+          url={`https://api.mapbox.com/styles/v1/mapbox/streets-v12/tiles/{z}/{x}/{y}@2x?access_token=${MAPBOX_TOKEN}`}
+          attribution='Map data &copy; <a href="https://www.openstreetmap.org/">OpenStreetMap</a>, Imagery &copy; <a href="https://www.mapbox.com/">Mapbox</a>'
+          tileSize={512}
+          zoomOffset={-1}
+        />
+      ) : (
+        <TileLayer
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        />
+      )}
 
       <MapViewportController
         listings={listings}

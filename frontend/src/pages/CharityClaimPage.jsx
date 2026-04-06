@@ -91,6 +91,7 @@ export default function CharityClaimPage({
   onToggleClaimQueue,
   onRemoveFromClaimQueue,
   onApplyClaimSuccesses,
+  isLoading = false,
 }) {
   const navigate = useNavigate();
   const [search, setSearch] = useState("");
@@ -270,6 +271,7 @@ export default function CharityClaimPage({
           listings={filteredMapListings}
           selectedListingId={selectedMapListingId}
           onSelectListing={setSelectedMapListingId}
+          isLoading={isLoading}
         />
 
         <section className="marketplace-dashboard">
@@ -319,7 +321,9 @@ export default function CharityClaimPage({
               </select>
             </div>
 
-            {filteredListings.length === 0 ? (
+            {isLoading ? (
+              <div className="empty-state" aria-live="polite">Loading available listings…</div>
+            ) : filteredListings.length === 0 ? (
               <div className="empty-state">No charity-eligible food items found.</div>
             ) : (
               <section className="catalog-grid">

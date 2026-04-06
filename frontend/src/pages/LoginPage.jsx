@@ -36,18 +36,43 @@ export default function LoginPage() {
   const [selectedRoleId, setSelectedRoleId] = useState(defaultRoleId);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [loginError, setLoginError] = useState("");
+
+  const LOGIN_PATHS = {
+    vendor:      "/auth/vendor/login",
+    charity:     "/auth/charity/login",
+    marketplace: "/auth/public/login",
+  };
 
   const selectedRole =
     roleOptions.find((role) => role.id === selectedRoleId) ?? roleOptions[0];
 
-  function handleSubmit(event) {
+  async function handleSubmit(event) {
     event.preventDefault();
+    if (!email.trim() || !password.trim()) return;
 
-    if (!email.trim() || !password.trim()) {
-      return;
+    setLoginError("");
+    try {
+      const response = await fetch(LOGIN_PATHS[selectedRoleId], {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ email: email.trim(), password: password.trim() }),
+      });
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        setLoginError(err.detail ?? `Login failed (${response.status})`);
+        return;
+      }
+
+      const data = await response.json();
+      sessionStorage.setItem("authToken",  data.access_token);
+      sessionStorage.setItem("authRole",   data.role);
+      sessionStorage.setItem("authUserId", String(data.user_id));
+      navigate(selectedRole.destination);
+    } catch {
+      setLoginError("Could not reach the login service. Check your connection.");
     }
-
-    navigate(selectedRole.destination);
   }
 
   return (
@@ -130,6 +155,10 @@ export default function LoginPage() {
               <button type="submit" className="landing-button landing-button--primary">
                 Continue to {selectedRole.title}
               </button>
+
+              {loginError && (
+                <p className="login-form__error" role="alert">{loginError}</p>
+              )}
             </form>
           </section>
 

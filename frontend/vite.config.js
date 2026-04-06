@@ -15,6 +15,11 @@ export default defineConfig({
         target: "http://localhost:8000",
         changeOrigin: true,
       },
+      // Auth endpoints → Kong → outsystems-service (covers /auth/* and /admin/*)
+      "/auth": {
+        target: "http://localhost:8000",
+        changeOrigin: true,
+      },
       // Socket.io WebSocket → Kong → notification-service
       "/socket.io": {
         target: "http://localhost:8000",

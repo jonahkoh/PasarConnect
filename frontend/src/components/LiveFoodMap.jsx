@@ -5,6 +5,7 @@ export default function LiveFoodMap({
   listings,
   selectedListingId,
   onSelectListing,
+  isLoading = false,
   eyebrow = "Live pickup map",
   title = "Food locations around you",
   subcopy = "Every visible charity listing is roughly plotted here, and you can click any pin or card to inspect where pickup happens.",
@@ -36,6 +37,11 @@ export default function LiveFoodMap({
 
       <div className="live-food-map__layout">
         <div className="live-food-map__canvas">
+          {isLoading && (
+            <div className="live-food-map__loading-overlay" role="status" aria-live="polite">
+              Loading listings…
+            </div>
+          )}
           <ListingLocationMap
             listings={listings}
             selectedListingId={selectedListing?.id ?? null}
@@ -55,7 +61,7 @@ export default function LiveFoodMap({
               <div className="live-food-map__focus-meta">
                 <span>{selectedListing.vendor}</span>
                 <span>{selectedListing.quantityLabel}</span>
-                <span>{selectedListing.distanceKm} km away</span>
+                {selectedListing.distanceKm != null && <span>{selectedListing.distanceKm} km away</span>}
               </div>
               <div className="live-food-map__focus-actions">
                 <Link to={`${routeBase}/${selectedListing.id}`} className="live-food-map__link-btn">
@@ -95,7 +101,7 @@ export default function LiveFoodMap({
                   </div>
                   <div className="live-food-map__list-meta">
                     <span>{listing.quantityLabel}</span>
-                    <span>{listing.distanceKm} km away</span>
+                    {listing.distanceKm != null && <span>{listing.distanceKm} km away</span>}
                   </div>
                 </button>
               );
