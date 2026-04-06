@@ -334,6 +334,8 @@ services:
       KONG_DECLARATIVE_CONFIG:  /etc/kong/kong.yml
       KONG_PROXY_LISTEN:        0.0.0.0:8000
       KONG_ADMIN_LISTEN:        0.0.0.0:8001
+      KONG_ADMIN_GUI_LISTEN:    0.0.0.0:8002
+      KONG_ADMIN_GUI_URL:       http://localhost:8200
       KONG_PROXY_ACCESS_LOG:    /dev/stdout
       KONG_ADMIN_ACCESS_LOG:    /dev/stdout
       KONG_PROXY_ERROR_LOG:     /dev/stderr
@@ -341,6 +343,7 @@ services:
     ports:
       - "8000:8000"   # Proxy — single entry point for all frontend/API calls
       - "8100:8001"   # Admin API — 8100 on host (avoids collision with inventory-service on 8001)
+      - "8200:8002"   # Kong Manager GUI — 8200 on host (avoids collision with claim-service on 8002)
     healthcheck:
       test: ["CMD", "kong", "health"]
       interval: 10s
