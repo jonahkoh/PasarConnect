@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import TopNav from "../../../components/TopNav";
 import Toast from "../../../components/Toast";
 import VendorDashboardSummary from "../components/VendorDashboardSummary";
@@ -9,6 +10,15 @@ import { useVendorDashboard } from "../hooks/useVendorDashboard";
 import { approveClaim, rejectClaim } from "../api/vendorApi";
 
 export default function VendorDashboardPage({ authUser, socket }) {
+  const navigate = useNavigate();
+
+  // Guard: if session is missing or wrong role, redirect to login immediately.
+  useEffect(() => {
+    if (!authUser?.token || authUser.role !== "vendor") {
+      navigate("/login?role=vendor", { replace: true });
+    }
+  }, [authUser, navigate]);
+
   const { listings, setListings, notifications, setNotifications, isLoading, error, refetch } =
     useVendorDashboard(authUser, socket);
 
@@ -130,7 +140,7 @@ export default function VendorDashboardPage({ authUser, socket }) {
                         listing={listing}
                         onApprove={listing.pendingClaimId ? () => handleApproveClaim(listing.pendingClaimId) : null}
                         onReject={listing.pendingClaimId ? () => handleRejectClaim(listing.pendingClaimId) : null}
-                        actionError={actionError?.claimId === listing.pendingClaimId ? actionError.message : null}
+                        actionError={actionError != null && actionError.claimId === listing.pendingClaimId ? actionError.message : null}
                       />
                     ))}
                   </div>
