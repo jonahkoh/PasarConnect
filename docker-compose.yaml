@@ -86,12 +86,15 @@ services:
 
   rabbitmq:
     image: rabbitmq:3.13-management-alpine
+    restart: on-failure
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS}
     ports:
       - "5672:5672"    # AMQP
       - "15672:15672"  # Management UI  →  http://localhost:15672
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "ping"]
       interval: 10s
@@ -371,3 +374,4 @@ volumes:
   payment-log-db-data:
   verification-db-data:
   waitlist-db-data:
+  rabbitmq-data:
