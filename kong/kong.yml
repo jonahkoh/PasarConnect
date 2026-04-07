@@ -153,6 +153,25 @@ services:
           - http
           - https
 
+  # ── Media Service (port 8080) ─────────────────────────────────────────────
+  # Endpoint: POST /presign  { filename, content_type } → { upload_url, public_url }
+  # Kong strips /api/media; service receives /presign directly.
+  - name: media-service
+    url: http://media-service:8080
+    routes:
+      - name: media-api
+        paths:
+          - /api/media
+        strip_path: true    # /api/media/presign → strip → /presign ✓
+
+  - name: media-service-health
+    url: http://media-service:8080/health
+    routes:
+      - name: media-health
+        paths:
+          - /api/media/health
+        strip_path: true
+
 # ── Consumers ─────────────────────────────────────────────────────────────────
 # One consumer represents all PasarConnect users.
 # Kong resolves the credential by matching the JWT iss claim to the credential key.
@@ -209,6 +228,13 @@ plugins:
 
   - name: jwt
     route: waitlist-api
+    config:
+      key_claim_name: iss
+      claims_to_verify:
+        - exp
+
+  - name: jwt
+    route: media-api
     config:
       key_claim_name: iss
       claims_to_verify:
