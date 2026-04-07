@@ -4190,3 +4190,101 @@ a {
   text-decoration: none;
 }
 
+/* ═══════════════════════════════════════════════════════
+   VENDOR LISTING — Photo upload widget
+   ═══════════════════════════════════════════════════════ */
+
+/* ── Pick / capture button ── */
+.vendor-upload-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 18px 16px;
+  border: 2px dashed #b0c9bb;
+  border-radius: 14px;
+  background: #f4f9f6;
+  color: #2d6b50;
+  font-family: Inter, system-ui, sans-serif;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.17s, background 0.17s;
+  text-align: left;
+}
+
+.vendor-upload-btn:hover:not(:disabled) {
+  border-color: #1f8a5b;
+  background: #edf6f1;
+}
+
+.vendor-upload-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.vendor-upload-btn__icon {
+  font-size: 1.4rem;
+  flex-shrink: 0;
+}
+
+/* ── Upload progress bar ── */
+.vendor-upload-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.vendor-upload-progress__bar {
+  height: 8px;
+  border-radius: 999px;
+  background: #e5ede8;
+  overflow: hidden;
+}
+
+.vendor-upload-progress__fill {
+  height: 100%;
+  border-radius: 999px;
+  background: #1f8a5b;
+  transition: width 0.2s ease;
+}
+
+.vendor-upload-progress__label {
+  font-family: Inter, system-ui, sans-serif;
+  font-size: 0.84rem;
+  color: #5d7a6b;
+}
+
+/* ── Preview after successful upload ── */
+.vendor-upload-preview {
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.vendor-upload-preview__img {
+  width: 100%;
+  max-height: 200px;
+  object-fit: cover;
+  border-radius: 12px;
+  border: 1px solid #dce8e1;
+}
+
+.vendor-upload-preview__remove {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: Inter, system-ui, sans-serif;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #1f8a5b;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.vendor-upload-preview__remove:hover {
+  color: #155e3e;
+}
+

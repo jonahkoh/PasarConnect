@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { createListing } from "../../../lib/listingApi";
+import { getPresignedUrl, uploadToS3 } from "../../../lib/mediaApi";
 
 const EMPTY = {
   title: "",
@@ -7,27 +8,75 @@ const EMPTY = {
   quantity: "",
   weight_kg: "",
   expiry: "",
-  image_url: "",
+  image_url: "",   // populated automatically after S3 upload
   latitude: "",
   longitude: "",
 };
+
+const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10 MB
 
 export default function VendorCreateListingModal({ token, onCreated, onClose }) {
   const [form, setForm] = useState(EMPTY);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState("");
 
+  // Upload state: "idle" | "uploading" | "done" | "error"
+  const [uploadState, setUploadState]       = useState("idle");
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadError, setUploadError]       = useState("");
+  const [previewUrl, setPreviewUrl]         = useState("");
+
+  const fileInputRef = useRef(null);
+
   function set(field) {
     return (e) => setForm((prev) => ({ ...prev, [field]: e.target.value }));
+  }
+
+  async function handleFileChange(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > MAX_FILE_BYTES) {
+      setUploadError("File too large — please choose an image under 10 MB.");
+      setUploadState("error");
+      return;
+    }
+
+    // Show a local preview immediately.
+    setPreviewUrl(URL.createObjectURL(file));
+    setUploadState("uploading");
+    setUploadProgress(0);
+    setUploadError("");
+    setForm((prev) => ({ ...prev, image_url: "" }));
+
+    try {
+      const { upload_url, public_url } = await getPresignedUrl(file.name, file.type, token);
+      await uploadToS3(file, upload_url, setUploadProgress);
+      setForm((prev) => ({ ...prev, image_url: public_url }));
+      setUploadState("done");
+    } catch (err) {
+      setUploadState("error");
+      setUploadError(err.message || "Upload failed. Please try again.");
+    }
+  }
+
+  function handleRemovePhoto() {
+    setForm((prev) => ({ ...prev, image_url: "" }));
+    setPreviewUrl("");
+    setUploadState("idle");
+    setUploadProgress(0);
+    setUploadError("");
+    if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
   async function handleSubmit(e) {
     e.preventDefault();
     setFormError("");
 
-    if (!form.title.trim()) { setFormError("Title is required."); return; }
+    if (!form.title.trim())  { setFormError("Title is required."); return; }
     if (!form.expiry)        { setFormError("Expiry date & time is required."); return; }
-    if (!form.image_url.trim()) { setFormError("Image URL is required."); return; }
+    if (uploadState === "uploading") { setFormError("Please wait for the photo to finish uploading."); return; }
+    if (!form.image_url)     { setFormError("A photo is required — choose one above."); return; }
     if (!form.quantity.trim() && !form.weight_kg.trim()) {
       setFormError("Enter either quantity (units) or weight (kg)."); return;
     }
@@ -35,7 +84,7 @@ export default function VendorCreateListingModal({ token, onCreated, onClose }) 
     const payload = {
       title:       form.title.trim(),
       description: form.description.trim() || undefined,
-      image_url:   form.image_url.trim(),
+      image_url:   form.image_url,
       expiry:      new Date(form.expiry).toISOString(),
     };
     if (form.quantity.trim())  payload.quantity  = Number(form.quantity);
@@ -96,14 +145,66 @@ export default function VendorCreateListingModal({ token, onCreated, onClose }) 
               />
             </label>
 
-            <label className="vendor-form-field">
-              <span className="vendor-form-label">Image URL *</span>
+            {/* ── Photo upload ── */}
+            <div className="vendor-form-field">
+              <span className="vendor-form-label">Photo *</span>
+
+              {/* Hidden native file input — triggered by the button below */}
               <input
-                type="url" value={form.image_url} onChange={set("image_url")}
-                placeholder="https://example.com/photo.jpg" required
-                className="vendor-form-input"
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handleFileChange}
+                style={{ display: "none" }}
+                aria-label="Choose a photo"
               />
-            </label>
+
+              {uploadState === "done" && form.image_url ? (
+                /* ── Preview after successful upload ── */
+                <div className="vendor-upload-preview">
+                  <img
+                    src={previewUrl || form.image_url}
+                    alt="Listing preview"
+                    className="vendor-upload-preview__img"
+                  />
+                  <button
+                    type="button"
+                    className="vendor-upload-preview__remove"
+                    onClick={handleRemovePhoto}
+                  >
+                    Change photo
+                  </button>
+                </div>
+              ) : uploadState === "uploading" ? (
+                /* ── Progress bar ── */
+                <div className="vendor-upload-progress">
+                  <div className="vendor-upload-progress__bar">
+                    <div
+                      className="vendor-upload-progress__fill"
+                      style={{ width: `${uploadProgress}%` }}
+                    />
+                  </div>
+                  <span className="vendor-upload-progress__label">
+                    Uploading… {uploadProgress}%
+                  </span>
+                </div>
+              ) : (
+                /* ── Pick / capture button ── */
+                <button
+                  type="button"
+                  className="vendor-upload-btn"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploadState === "uploading"}
+                >
+                  <span className="vendor-upload-btn__icon">📷</span>
+                  <span>Take a photo or choose from gallery</span>
+                </button>
+              )}
+
+              {uploadState === "error" && uploadError && (
+                <p className="vendor-form-error" role="alert">{uploadError}</p>
+              )}
+            </div>
           </div>
 
           {/* Section 2 — Quantity */}
@@ -172,7 +273,11 @@ export default function VendorCreateListingModal({ token, onCreated, onClose }) 
             <button type="button" onClick={onClose} className="vendor-modal__cancel">
               Cancel
             </button>
-            <button type="submit" disabled={isSubmitting} className="vendor-modal__submit">
+            <button
+              type="submit"
+              disabled={isSubmitting || uploadState === "uploading"}
+              className="vendor-modal__submit"
+            >
               {isSubmitting ? "Creating…" : "Create Listing"}
             </button>
           </div>
