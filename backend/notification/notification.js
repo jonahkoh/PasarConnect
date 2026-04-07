@@ -109,7 +109,9 @@ io.on("connection", (socket) => {
     socket.join(`vendor:${sub}`);
     console.log(`[socket] sub=${sub} joined: listings, vendor:${sub}`);
   } else {
-    console.log(`[socket] sub=${sub} joined: listings`);
+    // Public users get a private channel for payment confirmations.
+    socket.join(`user:${sub}`);
+    console.log(`[socket] sub=${sub} joined: listings, user:${sub}`);
   }
 
   // Vendor (or charity) can subscribe to a specific listing for real-time alerts
@@ -190,10 +192,45 @@ function handleClaimEvent(routingKey, payload) {
 function handlePaymentEvent(routingKey, payload) {
   switch (routingKey) {
     case "payment.success":
+      // Notify the listing room (vendor + watchers) and the buyer's private channel.
       emitToRooms(`listing:${payload.listing_id}`, "payment:success", payload);
+      if (payload.user_id) {
+        emitToRooms(`user:${payload.user_id}`, "payment:confirmed", payload);
+      }
+      break;
+    case "payment.collected":
+      // Vendor approved collection — listing is SOLD.
+      emitToRooms(`listing:${payload.listing_id}`, "payment:collected", payload);
+      break;
+    case "payment.refunded":
+      // Vendor reject or noshow-within-window — buyer gets their money back.
+      emitToRooms(`listing:${payload.listing_id}`, "payment:refunded", payload);
+      if (payload.user_id) {
+        emitToRooms(`user:${payload.user_id}`, "payment:refunded", payload);
+      }
+      break;
+    case "payment.cancelled":
+      // User self-cancelled within the window.
+      emitToRooms(`listing:${payload.listing_id}`, "payment:cancelled", payload);
+      if (payload.user_id) {
+        emitToRooms(`user:${payload.user_id}`, "payment:cancelled", payload);
+      }
+      break;
+    case "payment.forfeited":
+      // Vendor noshow past window — buyer forfeits payment.
+      emitToRooms(`listing:${payload.listing_id}`, "payment:forfeited", payload);
+      if (payload.user_id) {
+        emitToRooms(`user:${payload.user_id}`, "payment:forfeited", payload);
+      }
+      break;
+    case "payment.arrived":
+      // Buyer is on-site — notify the vendor via the listing room.
+      emitToRooms(`listing:${payload.listing_id}`, "payment:arrived", payload);
       break;
     case "payment.failure":
+      // Unexpected system error (compensating transaction) — ops/auditor only.
       console.warn("[payment.failure]", JSON.stringify(payload));
+      emitToRooms(`listing:${payload.listing_id}`, "payment:error", payload);
       break;
     default:
       console.warn("[amqp] Unhandled payment key:", routingKey);
@@ -275,9 +312,13 @@ async function startConsumer() {
     ch.ack(msg);
   });
 
-  // Queue: payment events
+  // Queue: payment events (success, collected, refunded, cancelled, forfeited, failure)
   await ch.assertQueue(QUEUES.paymentEvents, { durable: true });
-  for (const key of ["payment.success", "payment.failure"]) {
+  for (const key of [
+    "payment.success", "payment.collected",
+    "payment.refunded", "payment.cancelled", "payment.forfeited",
+    "payment.failure", "payment.arrived",
+  ]) {
     await ch.bindQueue(QUEUES.paymentEvents, PASARCONNECT_EXCHANGE, key);
   }
   ch.consume(QUEUES.paymentEvents, (msg) => {

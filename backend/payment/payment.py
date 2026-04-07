@@ -66,7 +66,8 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 # ── Internal service URLs (injected via env vars in Docker) ───────────────────
-STRIPE_WRAPPER_URL = os.getenv("STRIPE_WRAPPER_URL", "http://localhost:8004")
+STRIPE_WRAPPER_URL   = os.getenv("STRIPE_WRAPPER_URL",   "http://localhost:8004")
+PAYMENT_LOG_HTTP_URL = os.getenv("PAYMENT_LOG_HTTP_URL", "http://payment-log-service:8005")
 
 # Mirrors the same env var used by the Claim Service — must stay in sync.
 QUEUE_WINDOW_MINUTES = float(os.getenv("QUEUE_WINDOW_MINUTES", "5"))
@@ -302,6 +303,19 @@ async def stripe_webhook(payload: StripeWebhookPayload):
                     payload.stripe_transaction_id, refund_exc,
                 )
 
+        # Step 3a-i-b: Roll inventory back PENDING_PAYMENT → AVAILABLE.
+        # The mark_listing_sold_pending_collection call FAILED so the listing
+        # is still at PENDING_PAYMENT — we must free it.
+        try:
+            await inventory_client.rollback_listing_to_available(
+                log.listing_id, log.listing_version
+            )
+        except grpc.aio.AioRpcError as inv_exc:
+            logger.error(
+                "Inventory rollback to AVAILABLE failed for transaction_id=%s: [%s] %s",
+                payload.stripe_transaction_id, inv_exc.code(), inv_exc.details(),
+            )
+
         # Step 3a-ii: Update the log record to REFUNDED (or FAILED)
         new_status = payment_log_pb2.REFUNDED if refund_ok else payment_log_pb2.FAILED
         try:
@@ -346,6 +360,7 @@ async def stripe_webhook(payload: StripeWebhookPayload):
     await publisher.publish_payment_success(
         transaction_id = payload.stripe_transaction_id,
         listing_id     = log.listing_id,
+        user_id        = log.user_id,
     )
 
     logger.info(
@@ -353,6 +368,115 @@ async def stripe_webhook(payload: StripeWebhookPayload):
         payload.stripe_transaction_id, log.listing_id,
     )
     return {"status": "ok", "transaction_id": payload.stripe_transaction_id}
+
+
+@app.get("/payments/history")
+async def get_payment_history(
+    token_payload: Annotated[dict, Depends(verify_jwt_token)],
+):
+    """
+    Returns the authenticated user's full purchase history from the Payment Log service.
+    Ordered newest-first.
+    """
+    user_id = int(token_payload["sub"])
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(
+                f"{PAYMENT_LOG_HTTP_URL}/user-history/{user_id}",
+                timeout=10.0,
+            )
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Payment Log service error: {exc.response.status_code}",
+            )
+        except httpx.RequestError as exc:
+            raise HTTPException(status_code=503, detail="Payment Log service unavailable")
+    return response.json()
+
+
+@app.post("/payments/{transaction_id}/arrived", status_code=200)
+async def buyer_arrived(
+    transaction_id: str,
+    token_payload: Annotated[dict, Depends(verify_jwt_token)],
+):
+    """
+    Buyer is on-site and ready for item collection.
+    Publishes payment.arrived so the vendor is notified via Socket.io.
+    Only valid when the payment is in SUCCESS state.
+    """
+    user_id = int(token_payload["sub"])
+    log = await _fetch_payment_log_or_raise(transaction_id)
+
+    if _payment_status_name(log.status) != "SUCCESS":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cannot signal arrival when payment status is {_payment_status_name(log.status)}",
+        )
+
+    if user_id != log.user_id:
+        raise HTTPException(status_code=403, detail="Not the transaction owner")
+
+    await publisher.publish_payment_arrived(
+        transaction_id=transaction_id,
+        listing_id=log.listing_id,
+        user_id=user_id,
+    )
+
+    logger.info(
+        "Buyer arrived signal — transaction_id=%s listing_id=%s user_id=%s",
+        transaction_id, log.listing_id, user_id,
+    )
+    return {"status": "ok", "transaction_id": transaction_id}
+
+
+@app.delete("/payments/{transaction_id}/intent", status_code=200)
+async def abandon_payment_intent(
+    transaction_id: str,
+    body: UserCancelRequest,
+):
+    """
+    Abandon a PENDING payment intent before Stripe confirmation.
+
+    Called when the user exits the payment form without paying (clicks
+    \u201cCancel and return to cart\u201d after intents were already created).
+
+    Flow:
+      1. Fetch PENDING payment log.
+      2. Roll inventory back PENDING_PAYMENT \u2192 AVAILABLE.
+      3. Mark payment log as REFUNDED (no money was taken, so no real refund needed).
+    """
+    log = await _fetch_payment_log_or_raise(transaction_id)
+
+    if _payment_status_name(log.status) != "PENDING":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cannot abandon a payment that is already {_payment_status_name(log.status)}",
+        )
+
+    if body.user_id != log.user_id:
+        raise HTTPException(status_code=403, detail="user_id does not match the transaction owner")
+
+    # Roll back PENDING_PAYMENT \u2192 AVAILABLE (best-effort)
+    try:
+        await inventory_client.rollback_listing_to_available(log.listing_id, log.listing_version)
+    except grpc.aio.AioRpcError as exc:
+        logger.error(
+            "Inventory rollback failed on abandon for transaction_id=%s: [%s] %s",
+            transaction_id, exc.code(), exc.details(),
+        )
+
+    # Mark payment log abandoned (REFUNDED = no charge was made)
+    try:
+        await payment_log_client.update_payment_status_with_version(
+            transaction_id=transaction_id,
+            new_status=payment_log_pb2.REFUNDED,
+        )
+    except grpc.aio.AioRpcError as exc:
+        raise payment_log_client.map_payment_log_grpc_error(exc)
+
+    return {"status": "abandoned", "transaction_id": transaction_id}
 
 
 @app.post("/payments/{transaction_id}/approve")
@@ -380,7 +504,10 @@ async def approve_payment(transaction_id: str):
     except grpc.aio.AioRpcError as exc:
         raise payment_log_client.map_payment_log_grpc_error(exc)
 
-    await publisher.publish_payment_success(
+    # Use a separate collected event — payment.success was already fired by the
+    # webhook when the buyer's card was charged.  Firing it again here would
+    # cause duplicate "Payment received" toasts in the vendor dashboard.
+    await publisher.publish_payment_collected(
         transaction_id=transaction_id,
         listing_id=log.listing_id,
     )
@@ -440,10 +567,11 @@ async def reject_payment(transaction_id: str):
             raise HTTPException(status_code=404, detail="Refund succeeded but listing no longer exists")
         raise HTTPException(status_code=503, detail="Refund succeeded but inventory rollback failed")
 
-    await publisher.publish_payment_failure(
+    await publisher.publish_payment_refunded(
         transaction_id=transaction_id,
         listing_id=log.listing_id,
-        reason="Payment manually rejected",
+        user_id=log.user_id,
+        reason="Payment manually rejected by vendor",
     )
 
     return {
@@ -474,6 +602,11 @@ async def cancel_payment(transaction_id: str, body: UserCancelRequest):
     minutes_elapsed = _minutes_since_payment(log)
 
     if minutes_elapsed > CANCELLATION_WINDOW_MINUTES:
+        # Record the late-cancel attempt in Verification Service (best-effort).
+        await verification_client.record_user_late_cancel(
+            user_id=body.user_id,
+            transaction_id=transaction_id,
+        )
         raise HTTPException(
             status_code=409,
             detail={
@@ -522,10 +655,10 @@ async def cancel_payment(transaction_id: str, body: UserCancelRequest):
             raise HTTPException(status_code=404, detail="Refund succeeded but listing no longer exists")
         raise HTTPException(status_code=503, detail="Refund succeeded but inventory rollback failed")
 
-    await publisher.publish_payment_failure(
+    await publisher.publish_payment_cancelled(
         transaction_id=transaction_id,
         listing_id=log.listing_id,
-        reason="User cancelled within cancellation window",
+        user_id=log.user_id,
     )
 
     return {
@@ -608,12 +741,20 @@ async def noshow_payment(transaction_id: str, body: PaymentNoShowRequest):
         transaction_id=transaction_id,
     )
 
-    # Publish event
-    await publisher.publish_payment_failure(
-        transaction_id=transaction_id,
-        listing_id=log.listing_id,
-        reason="User no-show — item relisted" + (" (refunded)" if within_window else " (payment forfeited)"),
-    )
+    # Publish typed outcome event so the notification layer can show the correct message.
+    if within_window:
+        await publisher.publish_payment_refunded(
+            transaction_id=transaction_id,
+            listing_id=log.listing_id,
+            user_id=log.user_id,
+            reason="No-show recorded — refund issued (within leniency window)",
+        )
+    else:
+        await publisher.publish_payment_forfeited(
+            transaction_id=transaction_id,
+            listing_id=log.listing_id,
+            user_id=log.user_id,
+        )
 
     return {
         "status": "ok",

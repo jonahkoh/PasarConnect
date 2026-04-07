@@ -26,6 +26,12 @@ export default defineConfig({
         changeOrigin: true,
         ws: true,
       },
+      // Stripe webhook simulation — Kong forwards to payment-service:8003/webhooks/stripe
+      // (Not behind /api/ prefix; Kong's payment-webhooks route handles the /webhooks path)
+      "/webhooks": {
+        target: "http://localhost:8000",
+        changeOrigin: true,
+      },
     },
   },
 })

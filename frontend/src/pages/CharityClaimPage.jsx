@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import TopNav from "../components/TopNav";
 import FoodCard from "../components/FoodCard";
 import CharityFilterSidebar from "../components/CharityFilterSidebar";
@@ -85,8 +85,11 @@ export default function CharityClaimPage({
   authUser = null,
 }) {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [search, setSearch] = useState("");
-  const [activeView, setActiveView] = useState("queue");
+  const [activeView, setActiveView] = useState(() =>
+    searchParams.get("view") === "history" ? "history" : "queue"
+  );
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [sortBy, setSortBy] = useState("nearest");
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
@@ -618,44 +621,6 @@ export default function CharityClaimPage({
 
 
 
-        {activeClaims.map((claim) => (
-          <div
-            key={claim.claim_id}
-            className={`active-claim-banner${claim.status === "AWAITING_VENDOR_APPROVAL" ? " active-claim-banner--waiting" : ""}`}
-            role="status"
-          >
-            <div className="active-claim-banner__info">
-              <strong>{claim.name}</strong>
-              <span>Vendor: {claim.vendor}</span>
-              {claim.status === "AWAITING_VENDOR_APPROVAL" ? (
-                <span className="active-claim-banner__status">Waiting for vendor to confirm your arrival…</span>
-              ) : (
-                <span className="active-claim-banner__status">Ready to collect — head to the vendor and mark your arrival.</span>
-              )}
-            </div>
-            {claim.status === "PENDING_COLLECTION" && (
-              <div className="active-claim-banner__actions">
-                <button
-                  type="button"
-                  className="landing-button landing-button--primary"
-                  onClick={() => handleArrive(claim)}
-                  disabled={arrivingClaimId === claim.claim_id || cancellingClaimId === claim.claim_id}
-                >
-                  {arrivingClaimId === claim.claim_id ? "Notifying…" : "I've Arrived"}
-                </button>
-                <button
-                  type="button"
-                  className="landing-button landing-button--secondary"
-                  onClick={() => handleCancelClaim(claim)}
-                  disabled={arrivingClaimId === claim.claim_id || cancellingClaimId === claim.claim_id}
-                >
-                  {cancellingClaimId === claim.claim_id ? "Cancelling…" : "Cancel Claim"}
-                </button>
-              </div>
-            )}
-          </div>
-        ))}
-
         {queueWindowItems.length > 0 && (
           <div className="queue-window-section" role="region" aria-label="Queue window listings">
             <h2 className="queue-window-section__title">Join the Queue</h2>
@@ -813,12 +778,9 @@ export default function CharityClaimPage({
           </section>
 
           <ClaimSummaryCard
-            activeView={activeView}
             selectedItems={selectedItems}
-            claimHistory={claimHistory}
             submissionSummary={submissionSummary}
             isSubmitting={isSubmitting}
-            onChangeView={setActiveView}
             onRemoveItem={onRemoveFromClaimQueue}
             onSubmitClaims={handleSubmitClaims}
           />

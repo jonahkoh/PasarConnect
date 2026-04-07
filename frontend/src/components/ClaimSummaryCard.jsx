@@ -25,12 +25,9 @@ function formatSummary(summary) {
 }
 
 export default function ClaimSummaryCard({
-  activeView,
   selectedItems,
-  claimHistory,
   submissionSummary,
   isSubmitting,
-  onChangeView,
   onRemoveItem,
   onSubmitClaims,
 }) {
@@ -53,90 +50,45 @@ export default function ClaimSummaryCard({
         <div className="claim-queue__summary">{formatSummary(submissionSummary)}</div>
       )}
 
-      <div className="claim-queue__tabs">
-        <button
-          type="button"
-          className={`claim-queue__tab ${
-            activeView === "queue" ? "claim-queue__tab--active" : ""
-          }`}
-          onClick={() => onChangeView("queue")}
-        >
-          Claim Queue
-        </button>
-
-        <button
-          type="button"
-          className={`claim-queue__tab ${
-            activeView === "history" ? "claim-queue__tab--active" : ""
-          }`}
-          onClick={() => onChangeView("history")}
-        >
-          Claim History
-        </button>
-      </div>
-
-      {activeView === "queue" ? (
-        <>
-          {selectedItems.length === 0 ? (
-            <div className="cart-summary__empty">
-              Select charity-eligible items from the browse grid to build a claim
-              queue.
-            </div>
-          ) : (
-            <div className="cart-summary__list">
-              {selectedItems.map((item) => (
-                <article key={item.id} className="cart-line">
-                  <div>
-                    <h3>{item.name}</h3>
-                    <p>{item.vendor}</p>
-                    <p className="claim-queue__meta">{item.pickupWindow}</p>
-                  </div>
-
-                  <button
-                    type="button"
-                    className="claim-queue__remove"
-                    onClick={() => onRemoveItem(item.id)}
-                  >
-                    Remove
-                  </button>
-                </article>
-              ))}
-            </div>
-          )}
-
-          <button
-            type="button"
-            className="cart-summary__checkout"
-            onClick={onSubmitClaims}
-            disabled={selectedItems.length === 0 || isSubmitting}
-          >
-            {isSubmitting ? "Submitting..." : "Submit Selected Claims"}
-          </button>
-        </>
+      {selectedItems.length === 0 ? (
+        <div className="cart-summary__empty">
+          Select charity-eligible items from the browse grid to build a claim
+          queue.
+        </div>
       ) : (
-        <>
-          {claimHistory.length === 0 ? (
-            <div className="cart-summary__empty">
-              Successful claims will appear here with pending collection status.
-        
-            </div>
-          ) : (
-            <div className="cart-summary__list">
-              {claimHistory.map((item) => (
-                <article key={item.historyId} className="cart-line">
-                  <div>
-                    <h3>{item.name}</h3>
-                    <p>{item.vendor}</p>
-                    <p className="claim-queue__meta">{item.claimedAtLabel}</p>
-                  </div>
+        <div className="cart-summary__list">
+          {selectedItems.map((item) => (
+            <article key={item.id} className="cart-line">
+              <div>
+                <h3>{item.name}</h3>
+                <p>{item.vendor}</p>
+                <p className="claim-queue__meta">{item.pickupWindow}</p>
+              </div>
 
-                  <span className="claim-history__status">{item.status}</span>
-                </article>
-              ))}
-            </div>
-          )}
-        </>
+              <button
+                type="button"
+                className="claim-queue__remove"
+                onClick={() => onRemoveItem(item.id)}
+              >
+                Remove
+              </button>
+            </article>
+          ))}
+        </div>
       )}
+
+      <button
+        type="button"
+        className="cart-summary__checkout"
+        onClick={onSubmitClaims}
+        disabled={selectedItems.length === 0 || isSubmitting}
+      >
+        {isSubmitting ? "Submitting..." : "Submit Selected Claims"}
+      </button>
+
+      <a href="/charity/history" className="claim-queue__history-link">
+        View Claim History →
+      </a>
     </aside>
   );
 }

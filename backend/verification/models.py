@@ -172,6 +172,23 @@ class VendorCompliance(Base):
     )
 
 
+class PublicUserLateCancel(Base):
+    """
+    Append-only log of late-cancel attempts by public users.
+    Written when a user tries to cancel a payment AFTER the cancellation window has expired.
+    Tracked so repeated offenders can be reviewed by admins.
+    """
+
+    __tablename__ = "public_user_late_cancels"
+
+    id:             Mapped[int]               = mapped_column(Integer, primary_key=True, index=True)
+    user_id:        Mapped[int]               = mapped_column(Integer, index=True, nullable=False)
+    transaction_id: Mapped[str]               = mapped_column(String(128), nullable=False)
+    created_at:     Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 # ── Time helpers ──────────────────────────────────────────────────────────────
 
 def today_start() -> datetime.datetime:

@@ -13,9 +13,10 @@ No external client ever calls this service directly.
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-from sqlalchemy import text
+from sqlalchemy import select, text
 
-from database import Base, engine
+from database import Base, SessionLocal, engine
+from models import PaymentRecord
 
 
 @asynccontextmanager
@@ -64,3 +65,30 @@ app = FastAPI(title="PasarConnect — Payment Log Service", lifespan=lifespan)
 @app.get("/health")
 async def health_check():
     return {"status": "healthy", "service": "payment-log"}
+
+
+@app.get("/user-history/{user_id}")
+async def get_user_history(user_id: int):
+    """
+    Internal endpoint — called by Payment Service to fetch a user's purchase history.
+    Returns records ordered newest-first.
+    """
+    async with SessionLocal() as db:
+        result = await db.execute(
+            select(PaymentRecord)
+            .where(PaymentRecord.user_id == user_id)
+            .order_by(PaymentRecord.created_at.desc())
+        )
+        records = result.scalars().all()
+
+    return [
+        {
+            "transaction_id": r.stripe_transaction_id,
+            "listing_id":     r.listing_id,
+            "amount":         r.amount,
+            "status":         r.status.value,
+            "created_at":     r.created_at.isoformat() if r.created_at else None,
+            "updated_at":     r.updated_at.isoformat() if r.updated_at else None,
+        }
+        for r in records
+    ]

@@ -6,7 +6,7 @@ const TYPE_LABELS = {
   status: "Status",
 };
 
-export default function VendorNotificationsPanel({ notifications, socket, onNotification, onClaimReceived }) {
+export default function VendorNotificationsPanel({ notifications, socket, onNotification, onClaimReceived, onPaymentArrived }) {
   useEffect(() => {
     if (!socket) return;
 
@@ -24,6 +24,25 @@ export default function VendorNotificationsPanel({ notifications, socket, onNoti
       // Also ensure the listing card shows Approve/Reject buttons.
       if (onClaimReceived && payload.claim_id) {
         onClaimReceived({ listing_id: payload.listing_id, claim_id: payload.claim_id });
+      }
+    }
+
+    function handlePaymentArrived(payload) {
+      onNotification((prev) => [
+        {
+          id: `payment-arrived-${payload.transaction_id ?? Date.now()}`,
+          type: "purchase",
+          title: "Buyer has arrived",
+          message: `A buyer is at your location ready to collect listing #${payload.listing_id}. Please confirm or reject below.`,
+          timeLabel: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        },
+        ...prev,
+      ]);
+      if (onPaymentArrived) {
+        onPaymentArrived({
+          listing_id:     payload.listing_id,
+          transaction_id: payload.transaction_id,
+        });
       }
     }
 
@@ -57,26 +76,58 @@ export default function VendorNotificationsPanel({ notifications, socket, onNoti
     function handlePaymentSuccess(payload) {
       onNotification((prev) => [
         {
-          id: `payment-${payload.listing_id ?? Date.now()}`,
+          id: `payment-new-${payload.listing_id ?? Date.now()}`,
           type: "purchase",
-          title: "Payment received",
-          message: `Public purchase confirmed for listing #${payload.listing_id}.`,
+          title: "New purchase",
+          message: `Public buyer paid for listing #${payload.listing_id}. Awaiting collection.`,
           timeLabel: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
         },
         ...prev,
       ]);
     }
 
-    socket.on("claim:arrived",   handleClaimArrived);
-    socket.on("claim:success",   handleClaimSuccess);
-    socket.on("claim:cancelled", handleClaimCancelled);
-    socket.on("payment:success", handlePaymentSuccess);
+    function handlePaymentCollected(payload) {
+      onNotification((prev) => [
+        {
+          id: `payment-collected-${payload.listing_id ?? Date.now()}`,
+          type: "purchase",
+          title: "Collection confirmed",
+          message: `Listing #${payload.listing_id} collected — payment finalised.`,
+          timeLabel: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        },
+        ...prev,
+      ]);
+    }
+
+    function handlePaymentRefunded(payload) {
+      onNotification((prev) => [
+        {
+          id: `payment-refunded-${payload.listing_id ?? Date.now()}`,
+          type: "status",
+          title: "Purchase refunded",
+          message: `Listing #${payload.listing_id} refunded — item relisted.`,
+          timeLabel: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        },
+        ...prev,
+      ]);
+    }
+
+    socket.on("claim:arrived",     handleClaimArrived);
+    socket.on("payment:arrived",   handlePaymentArrived);
+    socket.on("claim:success",     handleClaimSuccess);
+    socket.on("claim:cancelled",   handleClaimCancelled);
+    socket.on("payment:success",   handlePaymentSuccess);
+    socket.on("payment:collected", handlePaymentCollected);
+    socket.on("payment:refunded",  handlePaymentRefunded);
 
     return () => {
-      socket.off("claim:arrived",   handleClaimArrived);
-      socket.off("claim:success",   handleClaimSuccess);
-      socket.off("claim:cancelled", handleClaimCancelled);
-      socket.off("payment:success", handlePaymentSuccess);
+      socket.off("claim:arrived",     handleClaimArrived);
+      socket.off("payment:arrived",   handlePaymentArrived);
+      socket.off("claim:success",     handleClaimSuccess);
+      socket.off("claim:cancelled",   handleClaimCancelled);
+      socket.off("payment:success",   handlePaymentSuccess);
+      socket.off("payment:collected", handlePaymentCollected);
+      socket.off("payment:refunded",  handlePaymentRefunded);
     };
   }, [socket, onNotification, onClaimReceived]);
 

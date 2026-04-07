@@ -86,6 +86,8 @@ export default function LoginPage() {
       sessionStorage.setItem("authToken",  data.access_token);
       sessionStorage.setItem("authRole",   data.role);
       sessionStorage.setItem("authUserId", String(data.user_id));
+      // Store email as a friendly display name for the TopNav.
+      sessionStorage.setItem("authUserName", email.trim());
       // Full page navigation so App remounts and re-reads authUser from sessionStorage.
       window.location.href = selectedRole.destination;
     } catch {
@@ -109,7 +111,7 @@ export default function LoginPage() {
         </section>
 
         <section className="login-layout">
-          <section className="login-panel">
+          <section className="login-panel" style={{ maxWidth: 480, margin: "0 auto" }}>
             <div className="login-panel__header">
               <h2>Welcome back</h2>
               <p>Use the same account details and choose where you want to go.</p>
@@ -168,6 +170,9 @@ export default function LoginPage() {
                 <Link to="/" className="login-form__help">
                   Back to landing page
                 </Link>
+                <Link to="/register" className="login-form__help">
+                  Create an account
+                </Link>
               </div>
 
               <button type="submit" className="landing-button landing-button--primary">
@@ -180,31 +185,6 @@ export default function LoginPage() {
             </form>
           </section>
 
-          <aside className="login-role-panel">
-            <div className="login-role-panel__header">
-              <p className="landing-eyebrow">Where you will go</p>
-              <h2>Each login path leads to its respective page.</h2>
-            </div>
-
-            <div className="login-role-grid">
-              {roleOptions.map((role) => (
-                <button
-                  key={role.id}
-                  type="button"
-                  className={`login-role-card${
-                    selectedRoleId === role.id ? " login-role-card--active" : ""
-                  }`}
-                  onClick={() => setSelectedRoleId(role.id)}
-                >
-                  <div className="login-role-card__header">
-                    <h3>{role.title}</h3>
-                    <span aria-hidden="true">→</span>
-                  </div>
-                  <p>{role.description}</p>
-                </button>
-              ))}
-            </div>
-          </aside>
         </section>
       </main>
     </div>

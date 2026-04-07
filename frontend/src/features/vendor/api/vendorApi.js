@@ -93,3 +93,43 @@ export async function rejectClaim(claimId, token) {
   }
   return res.json();
 }
+
+const PAYMENTS_BASE = "/api/payments";
+
+/**
+ * POST /api/payments/{transaction_id}/approve
+ * Vendor confirms the buyer has collected the item.
+ */
+export async function approvePayment(transactionId, token) {
+  const res = await fetch(`${PAYMENTS_BASE}/${transactionId}/approve`, {
+    method: "POST",
+    headers: authHeaders(token),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => null);
+    throw new Error(
+      (typeof data?.detail === "string" ? data.detail : null) ??
+        `Approve payment failed (${res.status})`
+    );
+  }
+  return res.json();
+}
+
+/**
+ * POST /api/payments/{transaction_id}/reject
+ * Vendor rejects the collection — buyer is refunded.
+ */
+export async function rejectPayment(transactionId, token) {
+  const res = await fetch(`${PAYMENTS_BASE}/${transactionId}/reject`, {
+    method: "POST",
+    headers: authHeaders(token),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => null);
+    throw new Error(
+      (typeof data?.detail === "string" ? data.detail : null) ??
+        `Reject payment failed (${res.status})`
+    );
+  }
+  return res.json();
+}

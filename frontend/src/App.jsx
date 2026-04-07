@@ -1,16 +1,31 @@
 import { useEffect, useMemo, useState } from "react";
-import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { fetchListingById, fetchListings } from "./lib/inventoryApi";
 import { useSocket } from "./hooks/useSocket";
 import Toast from "./components/Toast";
 import VendorDashboardPage from "./features/vendor/pages/VendorDashboardPage";
 import CharityClaimPage from "./pages/CharityClaimPage";
+import ClaimHistoryPage from "./pages/ClaimHistoryPage";
 import CharityClaimDetailPage from "./pages/CharityClaimDetailPage";
 import LandingPage from "./pages/LandingPage";
 import LoginPage from "./pages/LoginPage";
 import MarketplaceCartPage from "./pages/MarketplaceCartPage";
 import PublicMarketplaceDetailPage from "./pages/PublicMarketplaceDetailPage";
 import PublicMarketplacePage from "./pages/PublicMarketplacePage";
+import PurchaseHistoryPage from "./pages/PurchaseHistoryPage";
+import RegisterPage from "./pages/RegisterPage";
+
+// Simple auth guard: if the user isn't logged in (or has the wrong role) redirect
+// them to the login page pre-selecting the correct role tab.
+function ProtectedRoute({ authUser, requiredRole, loginRole, children }) {
+  if (!authUser?.token) {
+    return <Navigate to={`/login?role=${loginRole ?? requiredRole}`} replace />;
+  }
+  if (requiredRole && authUser.role !== requiredRole) {
+    return <Navigate to={`/login?role=${loginRole ?? requiredRole}`} replace />;
+  }
+  return children;
+}
 
 function parsePrice(value) {
   return Number(value.replace(/[^0-9.]/g, "")) || 0;
@@ -110,6 +125,14 @@ export default function App() {
       setToast(`Queue position #${payload.position} assigned. You'll be notified when it's your turn.`);
     });
 
+        socket.on("payment:confirmed", ({ listing_id }) => {
+      // Buyer confirmed payment — mark listing as unavailable in the public feed.
+      const patch = { status: "SOLD_PENDING_COLLECTION", badge: "Sold", charityWindow: "" };
+      setPublicListings((prev) =>
+        prev.map((l) => (l.id === listing_id ? { ...l, ...patch } : l))
+      );
+    });
+
     return () => {
       socket.off("listing:new");
       socket.off("listing:window_closed");
@@ -117,6 +140,7 @@ export default function App() {
       socket.off("claim:promoted");
       socket.off("claim:offered");
       socket.off("claim:queued");
+      socket.off("payment:confirmed");
     };
   }, [socket]);
 
@@ -235,15 +259,21 @@ export default function App() {
       return [
         ...prev,
         {
-          id: item.id,
-          name: item.name,
-          vendor: item.vendor,
-          imageUrl: item.imageUrl,
-          quantity: 1,
-          unitPrice: parsePrice(item.priceLabel),
-          maxQuantity: parseQuantity(item.quantityLabel),
-          pickupWindow: item.pickupWindow ?? "Self pickup",
-          location: item.vendor,
+          id:              item.id,
+          name:            item.name,
+          vendor:          item.vendor,
+          imageUrl:        item.imageUrl,
+          quantity:        1,
+          // Marketplace items need amount > 0 for the payment service.
+          // priceLabel is currently "Free" for all listings; use $2.00 SGD as the
+          // demo marketplace price until the inventory API exposes a price field.
+          unitPrice:       Math.max(parsePrice(item.priceLabel), 2.00),
+          maxQuantity:     parseQuantity(item.quantityLabel),
+          pickupWindow:    item.pickupWindow ?? "Self pickup",
+          location:        item.vendor,
+          // Keep the inventory version so the payment service can verify no
+          // concurrent modification has occurred (optimistic locking).
+          listing_version: item.version ?? 0,
         },
       ];
     });
@@ -276,8 +306,9 @@ export default function App() {
         <Route
           path="/charity"
           element={
+            <ProtectedRoute authUser={authUser} requiredRole="charity">
             <CharityClaimPage
-              listings={charityListings}
+              listings={charityListings.filter((l) => l.status === "AVAILABLE")}
               selectedClaimIds={selectedClaimIds}
               onToggleClaimQueue={toggleClaimQueue}
               onRemoveFromClaimQueue={removeFromClaimQueue}
@@ -286,6 +317,7 @@ export default function App() {
               socket={socket}
               authUser={authUser}
             />
+            </ProtectedRoute>
           }
         />
         <Route
@@ -304,22 +336,25 @@ export default function App() {
         <Route
           path="/marketplace"
           element={
-            <PublicMarketplacePage
-              listings={publicListings}
-              cart={marketplaceCart}
-              totalCartItems={totalCartItems}
-              getCartQuantity={getCartQuantity}
-              onAddToCart={addToMarketplaceCart}
-              onUpdateQuantity={updateMarketplaceCartItem}
-              isLoading={isListingsLoading}
-            />
+            <ProtectedRoute authUser={authUser} requiredRole="public" loginRole="marketplace">
+              <PublicMarketplacePage
+                listings={publicListings.filter((l) => l.status === "AVAILABLE")}
+                cart={marketplaceCart}
+                totalCartItems={totalCartItems}
+                getCartQuantity={getCartQuantity}
+                onAddToCart={addToMarketplaceCart}
+                onUpdateQuantity={updateMarketplaceCartItem}
+                isLoading={isListingsLoading}
+                authUser={authUser}
+              />
+            </ProtectedRoute>
           }
         />
         <Route
           path="/marketplace/:listingId"
           element={
             <PublicMarketplaceDetailPage
-              listings={publicListings}
+              listings={publicListings.filter((l) => l.status === "AVAILABLE")}
               cart={marketplaceCart}
               getCartQuantity={getCartQuantity}
               onAddToCart={addToMarketplaceCart}
@@ -335,10 +370,37 @@ export default function App() {
               totalCartItems={totalCartItems}
               onUpdateQuantity={updateMarketplaceCartItem}
               onClearCart={clearMarketplaceCart}
+              authUser={authUser}
             />
           }
         />
-        <Route path="/vendor" element={<VendorDashboardPage authUser={authUser} socket={socket} />} />
+        <Route
+          path="/marketplace/orders"
+          element={<PurchaseHistoryPage authUser={authUser} socket={socket} />}
+        />
+        <Route
+          path="/charity/history"
+          element={
+            <ProtectedRoute authUser={authUser} requiredRole="charity">
+              <ClaimHistoryPage authUser={authUser} socket={socket} />
+            </ProtectedRoute>
+          }
+        />
+        <Route path="/vendor" element={
+          <ProtectedRoute authUser={authUser} requiredRole="vendor">
+            <VendorDashboardPage authUser={authUser} socket={socket} />
+          </ProtectedRoute>
+        } />
+        <Route path="/register" element={<RegisterPage />} />
+        <Route
+          path="/live-chats"
+          element={
+            <div style={{ padding: "80px 32px", textAlign: "center", fontFamily: "Inter, sans-serif" }}>
+              <h2>Live Chats</h2>
+              <p style={{ color: "#557468" }}>Coming soon — real-time chat with vendors and charities.</p>
+            </div>
+          }
+        />
       </Routes>
     </BrowserRouter>
   );

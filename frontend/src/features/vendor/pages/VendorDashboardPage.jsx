@@ -7,7 +7,7 @@ import VendorListingCard from "../components/VendorListingCard";
 import VendorNotificationsPanel from "../components/VendorNotificationsPanel";
 import VendorCreateListingModal from "../components/VendorCreateListingModal";
 import { useVendorDashboard } from "../hooks/useVendorDashboard";
-import { approveClaim, rejectClaim } from "../api/vendorApi";
+import { approveClaim, rejectClaim, approvePayment, rejectPayment } from "../api/vendorApi";
 
 export default function VendorDashboardPage({ authUser, socket }) {
   const navigate = useNavigate();
@@ -73,6 +73,42 @@ export default function VendorDashboardPage({ authUser, socket }) {
       );
     } catch (err) {
       setActionError({ claimId, message: err.message });
+    }
+  }
+
+  // ── Payment collection actions (buyer has arrived) ─────────────────────────
+
+  async function handleApprovePayment(transactionId) {
+    setActionError(null);
+    try {
+      await approvePayment(transactionId, authUser?.token);
+      showToast(`Collection confirmed. Listing marked as SOLD.`);
+      setListings((prev) =>
+        prev.map((l) =>
+          l.pendingPaymentTransactionId === transactionId
+            ? { ...l, status: "SOLD", pendingPaymentTransactionId: null }
+            : l
+        )
+      );
+    } catch (err) {
+      setActionError({ claimId: transactionId, message: err.message });
+    }
+  }
+
+  async function handleRejectPayment(transactionId) {
+    setActionError(null);
+    try {
+      await rejectPayment(transactionId, authUser?.token);
+      showToast(`Collection rejected. Buyer refunded. Listing relisted.`);
+      setListings((prev) =>
+        prev.map((l) =>
+          l.pendingPaymentTransactionId === transactionId
+            ? { ...l, status: "AVAILABLE", pendingPaymentTransactionId: null }
+            : l
+        )
+      );
+    } catch (err) {
+      setActionError({ claimId: transactionId, message: err.message });
     }
   }
 
@@ -143,9 +179,27 @@ export default function VendorDashboardPage({ authUser, socket }) {
                       <VendorListingCard
                         key={listing.id}
                         listing={listing}
-                        onApprove={listing.pendingClaimId ? () => handleApproveClaim(listing.pendingClaimId) : null}
-                        onReject={listing.pendingClaimId ? () => handleRejectClaim(listing.pendingClaimId) : null}
-                        actionError={actionError != null && actionError.claimId === listing.pendingClaimId ? actionError.message : null}
+                        onApprove={
+                          listing.pendingClaimId
+                            ? () => handleApproveClaim(listing.pendingClaimId)
+                            : listing.pendingPaymentTransactionId
+                            ? () => handleApprovePayment(listing.pendingPaymentTransactionId)
+                            : null
+                        }
+                        onReject={
+                          listing.pendingClaimId
+                            ? () => handleRejectClaim(listing.pendingClaimId)
+                            : listing.pendingPaymentTransactionId
+                            ? () => handleRejectPayment(listing.pendingPaymentTransactionId)
+                            : null
+                        }
+                        actionError={
+                          actionError != null &&
+                          (actionError.claimId === listing.pendingClaimId ||
+                            actionError.claimId === listing.pendingPaymentTransactionId)
+                            ? actionError.message
+                            : null
+                        }
                       />
                     ))}
                   </div>
@@ -160,6 +214,15 @@ export default function VendorDashboardPage({ authUser, socket }) {
                   setListings((prev) =>
                     prev.map((l) =>
                       l.id === listing_id ? { ...l, pendingClaimId: claim_id } : l
+                    )
+                  )
+                }
+                onPaymentArrived={({ listing_id, transaction_id }) =>
+                  setListings((prev) =>
+                    prev.map((l) =>
+                      l.id === listing_id
+                        ? { ...l, pendingPaymentTransactionId: transaction_id }
+                        : l
                     )
                   )
                 }

@@ -279,6 +279,8 @@ services:
       CANCELLATION_WINDOW_MINUTES:  ${CANCELLATION_WINDOW_MINUTES:-10}
       VENDOR_WARNING_MINUTES:       ${VENDOR_WARNING_MINUTES:-30}
       PUBLIC_KEY_PATH:              ${PUBLIC_KEY_PATH}
+      PAYMENT_LOG_HTTP_URL:         http://payment-log-service:8005
+      VERIFICATION_HTTP_URL:        http://verification-service:8009
     volumes:
       - ./keys:/app/keys:ro
     depends_on:

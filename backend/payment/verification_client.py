@@ -24,6 +24,8 @@ VERIFICATION_GRPC_HOST = os.getenv("VERIFICATION_GRPC_HOST", "localhost")
 VERIFICATION_GRPC_PORT = os.getenv("VERIFICATION_GRPC_PORT", "50052")
 VERIFICATION_GRPC_ADDR = f"{VERIFICATION_GRPC_HOST}:{VERIFICATION_GRPC_PORT}"
 
+VERIFICATION_HTTP_URL = os.getenv("VERIFICATION_HTTP_URL", "http://verification-service:8009")
+
 
 class UserNotEligibleError(Exception):
     """
@@ -103,5 +105,31 @@ async def record_user_noshow(user_id: int, transaction_id: str) -> None:
     except Exception as exc:
         logger.error(
             "Best-effort RecordUserNoShow failed for user_id=%s transaction_id=%s: %s",
+            user_id, transaction_id, exc,
+        )
+
+
+async def record_user_late_cancel(user_id: int, transaction_id: str) -> None:
+    """
+    Calls the Verification Service REST endpoint to record a late-cancel attempt.
+
+    Best-effort: logs on any failure so the 409 response to the user is not blocked.
+    """
+    import httpx
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{VERIFICATION_HTTP_URL}/user-late-cancel",
+                json={"user_id": user_id, "transaction_id": transaction_id},
+                timeout=5.0,
+            )
+            response.raise_for_status()
+            logger.info(
+                "User late-cancel recorded: user_id=%s transaction_id=%s",
+                user_id, transaction_id,
+            )
+    except Exception as exc:
+        logger.error(
+            "Best-effort record_user_late_cancel failed for user_id=%s transaction_id=%s: %s",
             user_id, transaction_id, exc,
         )
