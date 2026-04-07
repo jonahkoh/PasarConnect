@@ -63,6 +63,27 @@ class CharityNoShow(Base):
     )
 
 
+class CharityLateCancelWarning(Base):
+    """
+    Append-only log of late-cancellation warnings.
+
+    Written by RecordLateCancelWarning RPC when a charity cancels a PENDING_COLLECTION
+    claim after the CANCEL_WINDOW_MINUTES grace period has elapsed.
+
+    Also increments CharityStanding.warning_count so the full standing check
+    (GetCharityStatus) reflects the cumulative warning history.
+    """
+
+    __tablename__ = "charity_late_cancel_warnings"
+
+    id:         Mapped[int]               = mapped_column(Integer, primary_key=True, index=True)
+    charity_id: Mapped[int]               = mapped_column(Integer, index=True, nullable=False)
+    claim_id:   Mapped[int]               = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 # ── Standing / compliance state (upserted rows) ───────────────────────────────
 
 class CharityStanding(Base):

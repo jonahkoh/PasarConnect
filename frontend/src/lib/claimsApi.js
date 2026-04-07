@@ -157,3 +157,26 @@ export async function declineWaitlistOffer({ listing_id, charity_id, token }) {
   }
   return data;
 }
+
+/**
+ * DELETE /api/claims/{claim_id}
+ * Charity cancels an active PENDING_COLLECTION claim.
+ * Body: { charity_id }
+ * Returns: { status: "cancelled", late_cancel_warning: boolean }
+ * late_cancel_warning is true when cancelled after the 1-minute grace window.
+ */
+export async function cancelClaim({ claim_id, charity_id, token }) {
+  const res = await fetch(`${CLAIMS_BASE}/${claim_id}`, {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
+    body: JSON.stringify({ charity_id }),
+  });
+  const data = await res.json().catch(() => null);
+  if (!res.ok) {
+    const err = new Error(extractMessage(data, `Cancel claim failed (${res.status})`));
+    err.status = res.status;
+    err.detail = extractDetail(data);
+    throw err;
+  }
+  return data;
+}

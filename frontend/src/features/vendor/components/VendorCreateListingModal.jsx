@@ -26,7 +26,7 @@ export default function VendorCreateListingModal({ token, onCreated, onClose }) 
     setFormError("");
 
     if (!form.title.trim()) { setFormError("Title is required."); return; }
-    if (!form.expiry)        { setFormError("Expiry date/time is required."); return; }
+    if (!form.expiry)        { setFormError("Expiry date & time is required."); return; }
     if (!form.image_url.trim()) { setFormError("Image URL is required."); return; }
     if (!form.quantity.trim() && !form.weight_kg.trim()) {
       setFormError("Enter either quantity (units) or weight (kg)."); return;
@@ -46,7 +46,7 @@ export default function VendorCreateListingModal({ token, onCreated, onClose }) 
     setIsSubmitting(true);
     try {
       const result = await createListing(payload, token);
-      onCreated(result); // { listing_id, listed_at }
+      onCreated(result);
     } catch (err) {
       setFormError(err.message);
     } finally {
@@ -59,125 +59,127 @@ export default function VendorCreateListingModal({ token, onCreated, onClose }) 
       role="dialog"
       aria-modal="true"
       aria-labelledby="create-listing-title"
-      style={{
-        position: "fixed", inset: 0, zIndex: 1000,
-        display: "flex", alignItems: "center", justifyContent: "center",
-        background: "rgba(0,0,0,0.55)",
-      }}
+      className="vendor-modal-backdrop"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div
-        style={{
-          background: "#fff", borderRadius: "12px", padding: "2rem",
-          width: "min(540px, 95vw)", maxHeight: "90vh", overflowY: "auto",
-          boxShadow: "0 8px 32px rgba(0,0,0,0.25)",
-        }}
-      >
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.25rem" }}>
-          <h2 id="create-listing-title" style={{ margin: 0, fontSize: "1.25rem" }}>Create New Listing</h2>
-          <button
-            type="button" onClick={onClose} aria-label="Close"
-            style={{ background: "none", border: "none", fontSize: "1.5rem", cursor: "pointer", lineHeight: 1 }}
-          >×</button>
+      <div className="vendor-modal">
+
+        {/* Sticky header */}
+        <div className="vendor-modal__head">
+          <h2 id="create-listing-title" className="vendor-modal__title">Create New Listing</h2>
+          <button type="button" onClick={onClose} aria-label="Close" className="vendor-modal__close">
+            ×
+          </button>
         </div>
 
-        <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-          <label style={{ display: "flex", flexDirection: "column", gap: "0.25rem", fontSize: "0.9rem" }}>
-            <span>Title *</span>
-            <input
-              type="text" value={form.title} onChange={set("title")}
-              placeholder="e.g. Sourdough Loaves" required
-              style={{ padding: "0.5rem 0.75rem", borderRadius: "6px", border: "1px solid #ccc" }}
-            />
-          </label>
+        <form onSubmit={handleSubmit} className="vendor-modal__body">
 
-          <label style={{ display: "flex", flexDirection: "column", gap: "0.25rem", fontSize: "0.9rem" }}>
-            <span>Description</span>
-            <textarea
-              value={form.description} onChange={set("description")} rows={2}
-              placeholder="Optional — shown to charity/public users"
-              style={{ padding: "0.5rem 0.75rem", borderRadius: "6px", border: "1px solid #ccc", resize: "vertical" }}
-            />
-          </label>
+          {/* Section 1 — What are you listing? */}
+          <div className="vendor-modal__section">
+            <p className="vendor-modal__section-title">What are you listing?</p>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
-            <label style={{ display: "flex", flexDirection: "column", gap: "0.25rem", fontSize: "0.9rem" }}>
-              <span>Quantity (units)</span>
+            <label className="vendor-form-field">
+              <span className="vendor-form-label">Title *</span>
               <input
-                type="number" min="1" value={form.quantity} onChange={set("quantity")}
-                placeholder="e.g. 12"
-                style={{ padding: "0.5rem 0.75rem", borderRadius: "6px", border: "1px solid #ccc" }}
+                type="text" value={form.title} onChange={set("title")}
+                placeholder="e.g. Sourdough Loaves" required
+                className="vendor-form-input"
               />
             </label>
-            <label style={{ display: "flex", flexDirection: "column", gap: "0.25rem", fontSize: "0.9rem" }}>
-              <span>Weight (kg)</span>
+
+            <label className="vendor-form-field">
+              <span className="vendor-form-label">Description</span>
+              <textarea
+                value={form.description} onChange={set("description")} rows={2}
+                placeholder="Optional — shown to charity and public users"
+                className="vendor-form-textarea"
+              />
+            </label>
+
+            <label className="vendor-form-field">
+              <span className="vendor-form-label">Image URL *</span>
               <input
-                type="number" min="0.01" step="0.01" value={form.weight_kg} onChange={set("weight_kg")}
-                placeholder="e.g. 2.5"
-                style={{ padding: "0.5rem 0.75rem", borderRadius: "6px", border: "1px solid #ccc" }}
+                type="url" value={form.image_url} onChange={set("image_url")}
+                placeholder="https://example.com/photo.jpg" required
+                className="vendor-form-input"
               />
             </label>
           </div>
 
-          <label style={{ display: "flex", flexDirection: "column", gap: "0.25rem", fontSize: "0.9rem" }}>
-            <span>Expiry date &amp; time *</span>
-            <input
-              type="datetime-local" value={form.expiry} onChange={set("expiry")} required
-              style={{ padding: "0.5rem 0.75rem", borderRadius: "6px", border: "1px solid #ccc" }}
-            />
-          </label>
+          {/* Section 2 — Quantity */}
+          <div className="vendor-modal__section">
+            <p className="vendor-modal__section-title">Quantity</p>
+            <p className="vendor-form-hint">Fill in at least one — units for countable items (e.g. loaves), kg for loose food (e.g. rice).</p>
 
-          <label style={{ display: "flex", flexDirection: "column", gap: "0.25rem", fontSize: "0.9rem" }}>
-            <span>Image URL *</span>
-            <input
-              type="url" value={form.image_url} onChange={set("image_url")}
-              placeholder="https://example.com/photo.jpg" required
-              style={{ padding: "0.5rem 0.75rem", borderRadius: "6px", border: "1px solid #ccc" }}
-            />
-          </label>
+            <div className="vendor-form-row">
+              <label className="vendor-form-field">
+                <span className="vendor-form-label">Units</span>
+                <input
+                  type="number" min="1" value={form.quantity} onChange={set("quantity")}
+                  placeholder="e.g. 12"
+                  className="vendor-form-input"
+                />
+              </label>
+              <label className="vendor-form-field">
+                <span className="vendor-form-label">Weight (kg)</span>
+                <input
+                  type="number" min="0.01" step="0.01" value={form.weight_kg} onChange={set("weight_kg")}
+                  placeholder="e.g. 2.5"
+                  className="vendor-form-input"
+                />
+              </label>
+            </div>
+          </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
-            <label style={{ display: "flex", flexDirection: "column", gap: "0.25rem", fontSize: "0.9rem" }}>
-              <span>Latitude</span>
+          {/* Section 3 — When & where? */}
+          <div className="vendor-modal__section">
+            <p className="vendor-modal__section-title">When &amp; where?</p>
+
+            <label className="vendor-form-field">
+              <span className="vendor-form-label">Expiry date &amp; time *</span>
               <input
-                type="number" step="any" value={form.latitude} onChange={set("latitude")}
-                placeholder="e.g. 1.3521"
-                style={{ padding: "0.5rem 0.75rem", borderRadius: "6px", border: "1px solid #ccc" }}
+                type="datetime-local" value={form.expiry} onChange={set("expiry")} required
+                className="vendor-form-input"
               />
             </label>
-            <label style={{ display: "flex", flexDirection: "column", gap: "0.25rem", fontSize: "0.9rem" }}>
-              <span>Longitude</span>
-              <input
-                type="number" step="any" value={form.longitude} onChange={set("longitude")}
-                placeholder="e.g. 103.8198"
-                style={{ padding: "0.5rem 0.75rem", borderRadius: "6px", border: "1px solid #ccc" }}
-              />
-            </label>
+
+            <div className="vendor-form-row">
+              <label className="vendor-form-field">
+                <span className="vendor-form-label">Latitude</span>
+                <input
+                  type="number" step="any" value={form.latitude} onChange={set("latitude")}
+                  placeholder="e.g. 1.3521"
+                  className="vendor-form-input"
+                />
+              </label>
+              <label className="vendor-form-field">
+                <span className="vendor-form-label">Longitude</span>
+                <input
+                  type="number" step="any" value={form.longitude} onChange={set("longitude")}
+                  placeholder="e.g. 103.8198"
+                  className="vendor-form-input"
+                />
+              </label>
+            </div>
+            <p className="vendor-form-hint">Location is optional — leave blank if you prefer not to show a map pin.</p>
           </div>
 
           {formError && (
-            <p role="alert" style={{ color: "#c0392b", fontSize: "0.875rem", margin: 0 }}>{formError}</p>
+            <p role="alert" className="vendor-form-error">{formError}</p>
           )}
 
-          <div style={{ display: "flex", gap: "0.75rem", justifyContent: "flex-end", marginTop: "0.5rem" }}>
-            <button
-              type="button" onClick={onClose}
-              style={{
-                padding: "0.6rem 1.25rem", borderRadius: "6px",
-                border: "1px solid #ccc", background: "#fff", cursor: "pointer",
-              }}
-            >Cancel</button>
-            <button
-              type="submit" disabled={isSubmitting}
-              style={{
-                padding: "0.6rem 1.25rem", borderRadius: "6px",
-                background: "#1a1a2e", color: "#fff", border: "none", cursor: "pointer",
-                opacity: isSubmitting ? 0.6 : 1,
-              }}
-            >{isSubmitting ? "Creating..." : "Create Listing"}</button>
+          <div className="vendor-modal__actions">
+            <button type="button" onClick={onClose} className="vendor-modal__cancel">
+              Cancel
+            </button>
+            <button type="submit" disabled={isSubmitting} className="vendor-modal__submit">
+              {isSubmitting ? "Creating…" : "Create Listing"}
+            </button>
           </div>
+
         </form>
       </div>
     </div>
   );
 }
+

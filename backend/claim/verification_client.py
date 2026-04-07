@@ -26,6 +26,8 @@ VERIFICATION_GRPC_HOST = os.getenv("VERIFICATION_GRPC_HOST", "localhost")
 VERIFICATION_GRPC_PORT = os.getenv("VERIFICATION_GRPC_PORT", "50052")
 VERIFICATION_GRPC_ADDR = f"{VERIFICATION_GRPC_HOST}:{VERIFICATION_GRPC_PORT}"
 
+_TIMEOUT = 5.0
+
 
 class CharityNotEligibleError(Exception):
     """
@@ -180,6 +182,36 @@ async def record_noshow(charity_id: int, claim_id: int) -> None:
                 status_code=502,
                 detail=f"Verification error: [{exc.code()}] {exc.details()}",
             )
+
+
+async def record_late_cancel_warning(charity_id: int, claim_id: int) -> None:
+    """
+    Calls RecordLateCancelWarning RPC — flags a charity that cancelled a claim after
+    the grace window, so the verification service can track repeat offenders.
+
+    Best-effort: raised exceptions are logged and swallowed so the cancellation itself
+    is never blocked.  The gRPC method must be added to the Verification Service proto
+    and handler before this call will have any effect.
+    """
+    try:
+        async with grpc.aio.insecure_channel(VERIFICATION_GRPC_ADDR) as channel:
+            stub = verification_pb2_grpc.VerificationServiceStub(channel)
+            await stub.RecordLateCancelWarning(
+                verification_pb2.LateCancelRequest(
+                    charity_id=charity_id,
+                    claim_id=claim_id,
+                ),
+                timeout=_TIMEOUT,
+            )
+            logger.info(
+                "Late-cancel warning recorded: charity_id=%s claim_id=%s",
+                charity_id, claim_id,
+            )
+    except Exception as exc:
+        logger.warning(
+            "record_late_cancel_warning best-effort failed charity_id=%s claim_id=%s: %s",
+            charity_id, claim_id, exc,
+        )
 
 
 async def get_charity_score(charity_id: int) -> int:

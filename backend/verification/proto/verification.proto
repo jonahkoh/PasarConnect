@@ -112,6 +112,8 @@ service VerificationService {
   rpc GetVendorStatus   (VendorStatusRequest)    returns (VendorStatusResponse);
   // Scoring for queue-window ranking: completed claims minus weighted noshows
   rpc GetCharityScore   (CharityScoreRequest)    returns (CharityScoreResponse);
+  // Record a late-cancel warning (charity cancelled after the grace window)
+  rpc RecordLateCancelWarning (LateCancelRequest) returns (LateCancelResponse);
 }
 
 message CharityScoreRequest {
@@ -122,4 +124,15 @@ message CharityScoreResponse {
   int32 completed_claims = 1;  // all-time non-cancelled claims
   int32 noshow_count     = 2;  // all-time no-show count
   int32 score            = 3;  // completed_claims - (noshow_count * 2)
+}
+
+// Record a charity late-cancellation warning (cancelled after the grace window)
+message LateCancelRequest {
+  int32 charity_id = 1;
+  int32 claim_id   = 2;
+}
+
+message LateCancelResponse {
+  bool  recorded          = 1;  // always true on success
+  int32 late_cancel_count = 2;  // lifetime late-cancel warnings for this charity
 }

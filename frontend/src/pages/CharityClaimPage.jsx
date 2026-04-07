@@ -5,10 +5,16 @@ import FoodCard from "../components/FoodCard";
 import CharityFilterSidebar from "../components/CharityFilterSidebar";
 import ClaimSummaryCard from "../components/ClaimSummaryCard";
 import LiveFoodMap from "../components/LiveFoodMap";
-import { submitClaim, postArrive, fetchMyClaims, joinWaitlist, acceptWaitlistOffer, declineWaitlistOffer } from "../lib/claimsApi";
+import { submitClaim, postArrive, fetchMyClaims, joinWaitlist, acceptWaitlistOffer, declineWaitlistOffer, cancelClaim } from "../lib/claimsApi";
 
 // Must match backend QUEUE_WINDOW_MINUTES=0.5 (30 seconds)
 const QUEUE_WINDOW_MS = 0.5 * 60 * 1000;
+
+// Must match backend OFFER_WINDOW_SECONDS=30
+const OFFER_WINDOW_SECONDS = 30;
+
+// Must match backend CANCEL_WINDOW_MINUTES=1 (testing) / 15 (production)
+const CANCEL_WINDOW_MINUTES = 1;
 
 function parseClaimError(error) {
   // 409 queue-window errors carry structured detail — handle before inspecting the message.
@@ -99,6 +105,15 @@ export default function CharityClaimPage({
   );
   // Track per-claim arrive submission state to avoid double-clicks.
   const [arrivingClaimId, setArrivingClaimId] = useState(null);
+  // Track per-claim cancel submission state.
+  const [cancellingClaimId, setCancellingClaimId] = useState(null);
+  // Late-cancel toast — shown after a charity cancels outside the grace window.
+  const [lateCancelToast, setLateCancelToast] = useState(false);
+
+  // Offer countdown timer — counts down from OFFER_WINDOW_SECONDS for the active modal.
+  const [offerSecondsLeft, setOfferSecondsLeft] = useState(OFFER_WINDOW_SECONDS);
+  const offerTimerRef = useRef(null);
+  const currentOfferRef = useRef(null); // tracks which listing_id is being timed
 
   // Queue-window: items from bulk submit that returned queue_window_active.
   const [queueWindowItems, setQueueWindowItems] = useState([]); // [{ item, detail }]
@@ -263,6 +278,40 @@ export default function CharityClaimPage({
     }
   }
 
+  async function handleCancelClaim(claim) {
+    setCancellingClaimId(claim.claim_id);
+    try {
+      const result = await cancelClaim({
+        claim_id: claim.claim_id,
+        charity_id: Number(authUser?.userId),
+        token: authUser?.token,
+      });
+      updateClaimStatus(claim.claim_id, "CANCELLED");
+      if (result?.late_cancel_warning) {
+        setLateCancelToast(true);
+      }
+    } catch {
+      // Re-sync so the banner always reflects the authoritative DB state.
+      if (authUser?.token) {
+        fetchMyClaims(authUser.token)
+          .then((claims) => {
+            const match = claims.find((c) => c.id === claim.claim_id);
+            if (match) updateClaimStatus(claim.claim_id, match.status);
+          })
+          .catch(() => {});
+      }
+    } finally {
+      setCancellingClaimId(null);
+    }
+  }
+
+  // Called when the offer timer reaches 0 — backend already auto-declined;
+  // just clean up local state so the card reverts to its normal state.
+  function handleOfferTimeout(listing_id) {
+    setOfferedListings((prev) => prev.filter((o) => o.listing_id !== listing_id));
+    setJoinedWaitlist((prev) => { const n = { ...prev }; delete n[listing_id]; return n; });
+  }
+
   async function handleJoinQueue(listing_id) {
     setJoiningQueueFor(listing_id);
     const item = listings.find((l) => l.id === listing_id);
@@ -333,14 +382,52 @@ export default function CharityClaimPage({
         charity_id: Number(authUser?.userId),
         token: authUser?.token,
       });
+    } catch {
+      // Non-fatal — API may already have timed out the offer server-side.
+      // We still clean up local state below so the card reverts correctly.
+    } finally {
+      // Always remove the offer and clear the joinedWaitlist entry so the
+      // FoodCard reverts to its default "Select" state regardless of whether
+      // the API call succeeded (already timed-out offers return 404).
       setOfferedListings((prev) => prev.filter((o) => o.listing_id !== listing_id));
       setJoinedWaitlist((prev) => { const n = { ...prev }; delete n[listing_id]; return n; });
-    } catch {
-      // Non-fatal — banner stays visible so the charity can retry.
-    } finally {
       setDecliningOfferId(null);
     }
   }
+
+  // Start/reset the 30s countdown whenever the front-of-queue offer changes.
+  const firstOfferId = offeredListings.length > 0 ? offeredListings[0].listing_id : null;
+  useEffect(() => {
+    clearInterval(offerTimerRef.current);
+    if (firstOfferId === null) {
+      setOfferSecondsLeft(OFFER_WINDOW_SECONDS);
+      currentOfferRef.current = null;
+      return;
+    }
+    currentOfferRef.current = firstOfferId;
+    setOfferSecondsLeft(OFFER_WINDOW_SECONDS);
+    offerTimerRef.current = setInterval(() => {
+      setOfferSecondsLeft((prev) => {
+        if (prev <= 1) {
+          clearInterval(offerTimerRef.current);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(offerTimerRef.current);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [firstOfferId]);
+
+  // When the countdown reaches 0, self-close the modal.
+  useEffect(() => {
+    if (offerSecondsLeft === 0 && currentOfferRef.current !== null) {
+      const lid = currentOfferRef.current;
+      currentOfferRef.current = null;
+      handleOfferTimeout(lid);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [offerSecondsLeft]);
 
   function toggleValue(setter, currentValues, value) {
     setter(
@@ -547,14 +634,24 @@ export default function CharityClaimPage({
               )}
             </div>
             {claim.status === "PENDING_COLLECTION" && (
-              <button
-                type="button"
-                className="landing-button landing-button--primary"
-                onClick={() => handleArrive(claim)}
-                disabled={arrivingClaimId === claim.claim_id}
-              >
-                {arrivingClaimId === claim.claim_id ? "Notifying…" : "I've Arrived"}
-              </button>
+              <div className="active-claim-banner__actions">
+                <button
+                  type="button"
+                  className="landing-button landing-button--primary"
+                  onClick={() => handleArrive(claim)}
+                  disabled={arrivingClaimId === claim.claim_id || cancellingClaimId === claim.claim_id}
+                >
+                  {arrivingClaimId === claim.claim_id ? "Notifying…" : "I've Arrived"}
+                </button>
+                <button
+                  type="button"
+                  className="landing-button landing-button--secondary"
+                  onClick={() => handleCancelClaim(claim)}
+                  disabled={arrivingClaimId === claim.claim_id || cancellingClaimId === claim.claim_id}
+                >
+                  {cancellingClaimId === claim.claim_id ? "Cancelling…" : "Cancel Claim"}
+                </button>
+              </div>
             )}
           </div>
         ))}
@@ -732,6 +829,7 @@ export default function CharityClaimPage({
       {offeredListings.length > 0 && (() => {
         const offer = offeredListings[0];
         const listingName = listings.find((l) => l.id === offer.listing_id)?.name ?? `Listing #${offer.listing_id}`;
+        const isBusy = acceptingOfferId === offer.listing_id || decliningOfferId === offer.listing_id;
         return (
           <div className="wl-modal-backdrop" role="dialog" aria-modal="true" aria-label="Slot offered">
             <div className="wl-modal">
@@ -739,13 +837,17 @@ export default function CharityClaimPage({
                 type="button"
                 className="wl-modal__close"
                 aria-label="Dismiss"
-                onClick={() => setOfferedListings((p) => p.slice(1))}
+                onClick={() => handleDeclineOffer(offer.listing_id)}
+                disabled={isBusy}
               >✕</button>
               <p className="wl-modal__eyebrow">Slot Available</p>
               <h2 className="wl-modal__title">{listingName}</h2>
               <p className="wl-modal__body">
                 {offer.message ?? "You've been selected from the waitlist! Accept to confirm your claim or decline to pass."}
               </p>
+              <div className={`wl-modal__timer${offerSecondsLeft <= 10 ? " wl-modal__timer--urgent" : ""}`}>
+                Auto-declining in <strong>{offerSecondsLeft}s</strong>
+              </div>
               {offeredListings.length > 1 && (
                 <p className="wl-modal__more">{offeredListings.length - 1} more offer(s) pending</p>
               )}
@@ -754,7 +856,7 @@ export default function CharityClaimPage({
                   type="button"
                   className="landing-button landing-button--primary"
                   onClick={() => handleAcceptOffer(offer.listing_id)}
-                  disabled={acceptingOfferId === offer.listing_id || decliningOfferId === offer.listing_id}
+                  disabled={isBusy}
                 >
                   {acceptingOfferId === offer.listing_id ? "Accepting…" : "Accept"}
                 </button>
@@ -762,7 +864,7 @@ export default function CharityClaimPage({
                   type="button"
                   className="landing-button"
                   onClick={() => handleDeclineOffer(offer.listing_id)}
-                  disabled={acceptingOfferId === offer.listing_id || decliningOfferId === offer.listing_id}
+                  disabled={isBusy}
                 >
                   {decliningOfferId === offer.listing_id ? "Declining…" : "Decline"}
                 </button>
@@ -787,6 +889,22 @@ export default function CharityClaimPage({
             {queueJoinedNotice.position != null && queueJoinedNotice.position > 0
               ? ` — you are #${queueJoinedNotice.position} in line. Position is finalised when the window closes.`
               : " — your position will be assigned when the queue window closes."}
+          </p>
+        </div>
+      )}
+
+      {/* ── Late-cancel warning toast ── shown after cancelling outside the grace window */}
+      {lateCancelToast && (
+        <div className="wl-toast wl-toast--warning" role="alert">
+          <button
+            type="button"
+            className="wl-toast__close"
+            aria-label="Dismiss"
+            onClick={() => setLateCancelToast(false)}
+          >✕</button>
+          <p className="wl-toast__title">Late Cancellation Warning</p>
+          <p className="wl-toast__body">
+            Your claim was cancelled after the {CANCEL_WINDOW_MINUTES}-minute grace period. This has been recorded on your account. Repeated late cancellations may affect your standing.
           </p>
         </div>
       )}

@@ -47,9 +47,15 @@ router = APIRouter(prefix="/claims", tags=["waitlist"])
 QUEUE_WINDOW_MINUTES = float(os.getenv("QUEUE_WINDOW_MINUTES", "5"))
 QUEUE_WINDOW = timedelta(minutes=QUEUE_WINDOW_MINUTES)
 
+OFFER_WINDOW_SECONDS = int(os.getenv("OFFER_WINDOW_SECONDS", "30"))
+
 # In-memory set of listing_ids that have QUEUING entries.
 # Populated by join_waitlist; consumed by the background resolution loop in claim.py.
 _pending_resolution: dict[int, datetime] = {}   # listing_id → window_closes_at
+
+# In-memory map of active OFFERED slots and the UTC time they were offered.
+# Keyed by (listing_id, charity_id); cleaned up by accept/decline and the timeout loop.
+_pending_offers: dict[tuple[int, int], datetime] = {}   # (listing_id, charity_id) → offered_at
 
 # Statuses visible to charity-facing GET /waitlist
 _VISIBLE_STATUSES = {"QUEUING", "WAITING", "OFFERED"}
@@ -253,6 +259,9 @@ async def accept_waitlist_offer(listing_id: int, body: WaitlistJoin):
                    "Check GET /claims/{listing_id}/waitlist for your current status.",
         )
 
+    # Charity responded — remove from offer-timeout tracking.
+    _pending_offers.pop((listing_id, charity_id), None)
+
     try:
         listing = await inventory_client.get_listing(listing_id)
         current_version = listing.version
@@ -308,6 +317,9 @@ async def decline_waitlist_offer(listing_id: int, body: WaitlistJoin):
             status_code=404,
             detail="No active offer for this charity on this listing.",
         )
+
+    # Charity responded — remove from offer-timeout tracking.
+    _pending_offers.pop((listing_id, charity_id), None)
 
     await waitlist_grpc_client.update_entry_status(entry["id"], "CANCELLED")
     # Return the quota slot consumed during promotion so repeated declines don't
@@ -417,6 +429,9 @@ async def try_promote_next(
         # 3. Mark entry OFFERED — charity must accept/decline via the API
         await waitlist_grpc_client.update_entry_status(entry_id, "OFFERED")
 
+        # Record the offer timestamp so the timeout loop can auto-decline if needed.
+        _pending_offers[(listing_id, charity_id)] = datetime.now(timezone.utc)
+
         # 4. Notify charity — they'll see a pop-up to accept or decline
         await publisher.publish_waitlist_offered(
             listing_id=listing_id,
@@ -457,3 +472,72 @@ async def queue_resolution_loop() -> None:
                 await _resolve_queue_window(listing_id)
             except Exception as exc:   # noqa: BLE001
                 logger.error("[queue_loop] Resolution failed for listing %s: %s", listing_id, exc)
+
+
+async def offer_timeout_loop() -> None:
+    """
+    Runs every 10 seconds. For any OFFERED slot where the charity has not responded
+    within OFFER_WINDOW_SECONDS, automatically performs the same teardown as a manual
+    decline: restores quota, rolls back inventory lock, and promotes the next charity.
+
+    OFFER_WINDOW_SECONDS defaults to 30 (testing); set to 300 (5 min) in production.
+    """
+    import asyncio
+    logger.info(
+        "[offer_timeout_loop] Background offer-timeout loop started "
+        "(window=%ds, poll=10s)",
+        OFFER_WINDOW_SECONDS,
+    )
+    while True:
+        await asyncio.sleep(10)
+        if not _pending_offers:
+            continue
+        now = datetime.now(timezone.utc)
+        expired = [
+            (lid, cid)
+            for (lid, cid), offered_at in list(_pending_offers.items())
+            if (now - offered_at).total_seconds() >= OFFER_WINDOW_SECONDS
+        ]
+        for listing_id, charity_id in expired:
+            _pending_offers.pop((listing_id, charity_id), None)
+            logger.info(
+                "[offer_timeout_loop] Offer expired for listing %s charity %s — auto-declining",
+                listing_id, charity_id,
+            )
+            try:
+                entry = await waitlist_grpc_client.get_entry(listing_id, charity_id)
+                if not entry or entry["status"] != "OFFERED":
+                    # Offer was already accepted/declined via API — nothing to do.
+                    logger.debug(
+                        "[offer_timeout_loop] listing %s charity %s no longer OFFERED — skipping",
+                        listing_id, charity_id,
+                    )
+                    continue
+
+                # Cancel the entry and restore quota (auto-timeout is not a penalty).
+                await waitlist_grpc_client.update_entry_status(entry["id"], "CANCELLED")
+                await verification_client.cancel_claim_quota(charity_id, listing_id)
+
+                try:
+                    listing = await inventory_client.get_listing(listing_id)
+                    available_version = await inventory_client.rollback_listing_to_available(
+                        listing_id, listing.version
+                    )
+                except grpc.aio.AioRpcError as exc:
+                    logger.error(
+                        "[offer_timeout_loop] Inventory rollback failed listing %s charity %s: %s",
+                        listing_id, charity_id, exc,
+                    )
+                    continue
+
+                offered_charity_id, _ = await try_promote_next(listing_id, available_version)
+                if not offered_charity_id:
+                    await publisher.publish_claim_cancelled(
+                        claim_id=0, listing_id=listing_id, charity_id=charity_id
+                    )
+
+            except Exception as exc:   # noqa: BLE001
+                logger.error(
+                    "[offer_timeout_loop] Auto-decline failed listing %s charity %s: %s",
+                    listing_id, charity_id, exc,
+                )

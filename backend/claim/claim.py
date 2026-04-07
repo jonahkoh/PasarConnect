@@ -25,9 +25,9 @@ import publisher
 import waitlist_grpc_client
 import waitlist_router
 from schemas import ClaimCreate, ClaimResponse, CancelClaimRequest
-from waitlist_router import try_promote_next, _is_window_active, has_active_queue, queue_resolution_loop, _pending_resolution
+from waitlist_router import try_promote_next, _is_window_active, has_active_queue, queue_resolution_loop, offer_timeout_loop, _pending_resolution
 from shared.jwt_auth import verify_jwt_token
-from verification_client import CharityNotEligibleError, cancel_claim_quota, record_noshow, verify_charity  #need to separate verification logic into a new service!
+from verification_client import CharityNotEligibleError, cancel_claim_quota, record_noshow, record_late_cancel_warning, verify_charity  #need to separate verification logic into a new service!
 
 load_dotenv()
 
@@ -80,10 +80,16 @@ async def lifespan(app: FastAPI):
         logger.warning("Startup hydration of pending queue resolutions failed (non-fatal): %s", exc)
 
     task = asyncio.create_task(queue_resolution_loop())
+    task2 = asyncio.create_task(offer_timeout_loop())
     yield
     task.cancel()
+    task2.cancel()
     try:
         await task
+    except asyncio.CancelledError:
+        pass
+    try:
+        await task2
     except asyncio.CancelledError:
         pass
 
@@ -181,6 +187,9 @@ async def create_claim(body: ClaimCreate, token_payload: Annotated[dict, Depends
         )
     except grpc.aio.AioRpcError as exc:
         code = exc.code()
+        # VerifyCharity already consumed a quota slot above — restore it now that the
+        # claim cannot proceed, so the charity is not penalised for a race condition.
+        await cancel_claim_quota(charity_id=body.charity_id, listing_id=body.listing_id)
         if code == grpc.StatusCode.NOT_FOUND:
             raise HTTPException(status_code=404, detail="Listing not found")
         if code == grpc.StatusCode.ABORTED:
@@ -216,6 +225,10 @@ async def create_claim(body: ClaimCreate, token_payload: Annotated[dict, Depends
                 rollback_exc.details(),
             )
 
+        # Restore quota slot — inventory was rolled back so the charity should be
+        # free to retry without the slot being silently consumed.
+        await cancel_claim_quota(charity_id=body.charity_id, listing_id=body.listing_id)
+
         await publisher.publish_claim_failure(
             listing_id=body.listing_id,
             charity_id=body.charity_id,
@@ -250,7 +263,7 @@ async def create_claim(body: ClaimCreate, token_payload: Annotated[dict, Depends
     }
 
 
-@app.delete("/claims/{claim_id}", status_code=204)
+@app.delete("/claims/{claim_id}", status_code=200)
 async def cancel_claim(claim_id: int, body: CancelClaimRequest):
     """
     Cancel an active PENDING_COLLECTION claim.
@@ -310,13 +323,16 @@ async def cancel_claim(claim_id: int, body: CancelClaimRequest):
 
     # 4b. Restore daily quota only if within the cancellation grace window.
     # After CANCEL_WINDOW_MINUTES the slot is consumed — penalises late voluntary cancels.
-    if _within_cancel_window(getattr(claim, "created_at", "")):
+    is_late_cancel = not _within_cancel_window(getattr(claim, "created_at", ""))
+    if not is_late_cancel:
         await cancel_claim_quota(charity_id=body.charity_id, listing_id=listing_id)
     else:
-        logger.info(
-            "Cancellation outside %d-min window for claim %s charity %s — quota not restored",
+        logger.warning(
+            "Late cancellation outside %d-min window for claim %s charity %s — quota not restored",
             CANCEL_WINDOW_MINUTES, claim_id, body.charity_id,
         )
+        # Record in Verification Service so standing/warning_count is updated.
+        await record_late_cancel_warning(charity_id=body.charity_id, claim_id=claim_id)
 
     # 5. Promote next from waitlist (auto-assigns listing to next eligible charity)
     promoted_charity_id, _ = await try_promote_next(
@@ -331,6 +347,8 @@ async def cancel_claim(claim_id: int, body: CancelClaimRequest):
             listing_id=listing_id,
             charity_id=body.charity_id,
         )
+
+    return {"status": "cancelled", "late_cancel_warning": is_late_cancel}
 
 
 @app.post("/claims/{claim_id}/noshow", status_code=200)

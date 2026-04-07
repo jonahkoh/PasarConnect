@@ -103,7 +103,6 @@ export default function VendorDashboardPage({ authUser, socket }) {
             type="button"
             className="landing-button landing-button--primary"
             onClick={() => setShowModal(true)}
-            style={{ alignSelf: "flex-start" }}
           >
             + Create Listing
           </button>

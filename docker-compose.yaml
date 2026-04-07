@@ -168,6 +168,7 @@ services:
       WAITLIST_GRPC_PORT:      50053
       CANCEL_WINDOW_MINUTES:   ${CANCEL_WINDOW_MINUTES:-15}
       QUEUE_WINDOW_MINUTES: ${QUEUE_WINDOW_MINUTES:-0.5}
+      OFFER_WINDOW_SECONDS: ${OFFER_WINDOW_SECONDS:-30}
     volumes:
       - ./keys:/app/keys:ro
     depends_on:

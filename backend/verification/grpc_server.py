@@ -26,6 +26,7 @@ from database import AsyncSessionLocal
 from models import (
     AppealStatus,
     CharityClaim,
+    CharityLateCancelWarning,
     CharityNoShow,
     CharityStanding,
     PublicUserNoShow,
@@ -605,6 +606,78 @@ class VerificationServicer(verification_pb2_grpc.VerificationServiceServicer):
             completed_claims=today_completed,
             noshow_count=noshow_count,
             score=score,
+        )
+
+    # ── 8. Record a late-cancel warning ───────────────────────────────────────
+
+    async def RecordLateCancelWarning(
+        self,
+        request: verification_pb2.LateCancelRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> verification_pb2.LateCancelResponse:
+        """
+        Called by Claim Service when a charity cancels after the grace window.
+
+        Persists a row to charity_late_cancel_warnings (append-only log) and
+        increments CharityStanding.warning_count so the standing check reflects it.
+        """
+        charity_id = request.charity_id
+        claim_id   = request.claim_id
+
+        if charity_id <= 0 or claim_id <= 0:
+            await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "charity_id and claim_id must be > 0")
+            return verification_pb2.LateCancelResponse()
+
+        logger.warning(
+            "RecordLateCancelWarning: charity_id=%s claim_id=%s", charity_id, claim_id
+        )
+
+        try:
+            async with AsyncSessionLocal() as db:
+                # Append the warning record
+                db.add(CharityLateCancelWarning(charity_id=charity_id, claim_id=claim_id))
+                await db.flush()
+
+                # Total late-cancel warnings for this charity
+                total_result = await db.execute(
+                    select(func.count(CharityLateCancelWarning.id)).where(
+                        CharityLateCancelWarning.charity_id == charity_id
+                    )
+                )
+                total_late_cancels = total_result.scalar()
+
+                # Upsert CharityStanding.warning_count
+                standing_result = await db.execute(
+                    select(CharityStanding).where(CharityStanding.charity_id == charity_id)
+                )
+                standing = standing_result.scalar_one_or_none()
+                if standing is None:
+                    standing = CharityStanding(
+                        charity_id=charity_id,
+                        warning_count=1,
+                        ban_count=0,
+                        appeal_status=AppealStatus.NONE,
+                    )
+                    db.add(standing)
+                else:
+                    standing.warning_count += 1
+
+                await db.commit()
+
+        except Exception as exc:
+            logger.exception(
+                "Unexpected error in RecordLateCancelWarning charity_id=%s: %s", charity_id, exc
+            )
+            await context.abort(grpc.StatusCode.INTERNAL, "Internal verification error")
+            return verification_pb2.LateCancelResponse()
+
+        logger.warning(
+            "Late-cancel warning recorded: charity_id=%s claim_id=%s total_warnings=%s",
+            charity_id, claim_id, total_late_cancels,
+        )
+        return verification_pb2.LateCancelResponse(
+            recorded=True,
+            late_cancel_count=total_late_cancels,
         )
 
 
