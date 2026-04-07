@@ -21,6 +21,10 @@ export default function VendorNotificationsPanel({ notifications, socket, onNoti
         },
         ...prev,
       ]);
+      // Also ensure the listing card shows Approve/Reject buttons.
+      if (onClaimReceived && payload.claim_id) {
+        onClaimReceived({ listing_id: payload.listing_id, claim_id: payload.claim_id });
+      }
     }
 
     function handleClaimSuccess(payload) {
@@ -29,14 +33,12 @@ export default function VendorNotificationsPanel({ notifications, socket, onNoti
           id: `claim-success-${payload.claim_id ?? Date.now()}`,
           type: "claim",
           title: "Charity claim received",
-          message: `Listing #${payload.listing_id} claimed by charity #${payload.charity_id}.`,
+          message: `Listing #${payload.listing_id} claimed by charity #${payload.charity_id}. Waiting for charity to arrive.`,
           timeLabel: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
         },
         ...prev,
       ]);
-      if (onClaimReceived && payload.claim_id) {
-        onClaimReceived({ listing_id: payload.listing_id, claim_id: payload.claim_id });
-      }
+      // Do NOT call onClaimReceived here — Approve/Reject should only appear after charity clicks "I've Arrived".
     }
 
     function handleClaimCancelled(payload) {

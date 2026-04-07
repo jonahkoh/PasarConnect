@@ -33,7 +33,7 @@ export function normalizeApiListing(raw) {
     address:       raw.description ?? "",
     latitude:      raw.latitude  ?? null,
     longitude:     raw.longitude ?? null,
-    imageUrl:      raw.image_url ?? null,
+    imageUrl:      raw.image_url?.startsWith("http") ? raw.image_url : null,
     distanceKm:    null,
     quantityLabel: quantity,
     priceLabel:    "Free",
@@ -43,6 +43,7 @@ export function normalizeApiListing(raw) {
     version:       raw.version,
     category:      "Food",
     pickupWindow:  "Check listing",
+    listedAt:      raw.created_at ?? null,
   };
 }
 

@@ -47,6 +47,10 @@ router = APIRouter(prefix="/claims", tags=["waitlist"])
 QUEUE_WINDOW_MINUTES = float(os.getenv("QUEUE_WINDOW_MINUTES", "5"))
 QUEUE_WINDOW = timedelta(minutes=QUEUE_WINDOW_MINUTES)
 
+# In-memory set of listing_ids that have QUEUING entries.
+# Populated by join_waitlist; consumed by the background resolution loop in claim.py.
+_pending_resolution: dict[int, datetime] = {}   # listing_id → window_closes_at
+
 # Statuses visible to charity-facing GET /waitlist
 _VISIBLE_STATUSES = {"QUEUING", "WAITING", "OFFERED"}
 
@@ -156,7 +160,13 @@ async def join_waitlist(listing_id: int, body: WaitlistJoin):
     is_active, _listed_at, window_closes_at = await _is_window_active(listing_id)
 
     if is_active:
-        return await waitlist_grpc_client.join_waitlist(listing_id, body.charity_id, status="QUEUING")
+        result = await waitlist_grpc_client.join_waitlist(listing_id, body.charity_id, status="QUEUING")
+        # Register for background auto-resolution at window close.
+        closes_dt = datetime.fromisoformat(window_closes_at)
+        if closes_dt.tzinfo is None:
+            closes_dt = closes_dt.replace(tzinfo=timezone.utc)
+        _pending_resolution[listing_id] = closes_dt
+        return result
 
     # Window closed — run lazy resolution if any QUEUING entries remain
     await _resolve_queue_window(listing_id)
@@ -294,6 +304,9 @@ async def decline_waitlist_offer(listing_id: int, body: WaitlistJoin):
         )
 
     await waitlist_grpc_client.update_entry_status(entry["id"], "CANCELLED")
+    # Return the quota slot consumed during promotion so repeated declines don't
+    # exhaust the charity's daily quota (MAX_DAILY_CLAIMS).
+    await verification_client.cancel_claim_quota(charity_id, listing_id)
 
     try:
         listing = await inventory_client.get_listing(listing_id)
@@ -413,3 +426,28 @@ async def try_promote_next(
     # Queue exhausted — no eligible charity found
     logger.info("Waitlist exhausted for listing %s — item is now publicly available", listing_id)
     return None, available_version
+
+
+# ── Background auto-resolution loop (started by claim.py lifespan) ────────────
+
+async def queue_resolution_loop() -> None:
+    """
+    Runs every 5 seconds. For any listing whose queue window has expired and still has
+    QUEUING entries registered, automatically calls _resolve_queue_window so charities
+    are promoted without needing a new request to trigger lazy resolution.
+    """
+    import asyncio
+    logger.info("[queue_loop] Background queue resolution loop started (interval=5s)")
+    while True:
+        await asyncio.sleep(5)
+        if not _pending_resolution:
+            continue
+        now = datetime.now(timezone.utc)
+        expired = [lid for lid, closes_at in list(_pending_resolution.items()) if now >= closes_at]
+        for listing_id in expired:
+            _pending_resolution.pop(listing_id, None)
+            logger.info("[queue_loop] Queue window expired for listing %s — resolving", listing_id)
+            try:
+                await _resolve_queue_window(listing_id)
+            except Exception as exc:   # noqa: BLE001
+                logger.error("[queue_loop] Resolution failed for listing %s: %s", listing_id, exc)

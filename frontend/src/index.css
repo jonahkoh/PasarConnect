@@ -398,6 +398,66 @@ a {
   color: #b07800;
 }
 
+/* Offered slot banner — urgent call to accept/decline */
+.active-claim-banner--offered {
+  background: #e8f0fe;
+  border-color: #4a7de8;
+}
+
+.active-claim-banner--offered .active-claim-banner__info {
+  color: #1a2d5a;
+}
+
+.active-claim-banner--offered .active-claim-banner__status {
+  color: #4a7de8;
+}
+
+.active-claim-banner__actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* Queue-window section — shown after bulk submit when items are in window */
+.queue-window-section {
+  background: #fff8e6;
+  border: 1.5px solid #e0a020;
+  border-radius: 10px;
+  padding: 16px 20px;
+  margin-bottom: 18px;
+}
+
+.queue-window-section__title {
+  margin: 0 0 6px;
+  font-size: 1.1rem;
+  color: #5a3e00;
+}
+
+.queue-window-section__desc {
+  margin: 0 0 14px;
+  font-size: 0.9rem;
+  font-family: Inter, system-ui, sans-serif;
+  color: #7a5a00;
+}
+
+.queue-window-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid #f0d070;
+}
+
+.queue-window-item__info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-family: Inter, system-ui, sans-serif;
+  font-size: 0.92rem;
+  color: #4a3200;
+}
+
 .catalog-page__intro h1 {
   margin: 0;
   font-size: 2.2rem;
@@ -425,6 +485,8 @@ a {
   padding: 24px 22px;
   position: sticky;
   top: 92px;
+  max-height: calc(100vh - 100px);
+  overflow-y: auto;
 }
 
 .filter-sidebar__header {
@@ -883,9 +945,42 @@ a {
   box-shadow: 0 0 0 3px rgba(47, 158, 229, 0.14);
 }
 
+/* Queue-window card — listing is in its 30-second charity queue window */
+.food-card--queue-window {
+  border-color: #e0a020;
+  box-shadow: 0 0 0 3px rgba(224, 160, 32, 0.15);
+}
+
+.food-card--queue-window .claim-btn {
+  background: #e0a020;
+  color: #fff;
+}
+
+.food-card--queue-window .claim-btn:disabled {
+  background: #6dbf8a;
+  color: #fff;
+  opacity: 1;
+}
+
+/* In-queue card — charity has already joined the waitlist */
+.food-card--in-queue {
+  border-color: #4caf7a;
+  opacity: 0.85;
+}
+
+.food-card--in-queue .claim-btn:disabled {
+  background: #4caf7a;
+  color: #fff;
+  opacity: 1;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
 .cart-summary {
   position: sticky;
   top: 92px;
+  max-height: calc(100vh - 100px);
+  overflow-y: auto;
   background: linear-gradient(180deg, #fbfaf6 0%, #f1ece3 100%);
   border: 1px solid #d8d0c3;
   border-radius: 20px;
@@ -2626,6 +2721,128 @@ a {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: #7b8a80;
+}
+
+/* ── Waitlist offer modal ──────────────────────────────────────────────────── */
+/* Backdrop sits BELOW the TopNav (z-index:30) so the nav stays fully usable. */
+.wl-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.wl-modal {
+  position: relative;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+  padding: 2rem 2rem 1.5rem;
+  max-width: 440px;
+  width: 100%;
+  z-index: 21;
+}
+
+.wl-modal__close {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  background: none;
+  border: none;
+  font-size: 1.25rem;
+  cursor: pointer;
+  color: #888;
+  line-height: 1;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+}
+.wl-modal__close:hover { background: #f0f0f0; color: #333; }
+
+.wl-modal__eyebrow {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #2e7d52;
+  margin: 0 0 0.25rem;
+}
+
+.wl-modal__title {
+  font-size: 1.3rem;
+  font-weight: 700;
+  margin: 0 0 0.75rem;
+  color: #1f3b2d;
+}
+
+.wl-modal__body {
+  font-size: 0.95rem;
+  color: #4a5a50;
+  margin: 0 0 0.5rem;
+  line-height: 1.5;
+}
+
+.wl-modal__more {
+  font-size: 0.8rem;
+  color: #888;
+  margin: 0 0 1rem;
+}
+
+.wl-modal__actions {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+}
+
+.wl-modal__actions .landing-button {
+  flex: 1;
+}
+
+/* ── Queue-joined toast ───────────────────────────────────────────────────── */
+/* Fixed bottom-right corner, above main content, below nav just in case.    */
+.wl-toast {
+  position: fixed;
+  bottom: 1.5rem;
+  right: 1.5rem;
+  background: #1f3b2d;
+  color: #fff;
+  border-radius: 10px;
+  padding: 1rem 1.25rem 1rem 1rem;
+  max-width: 340px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+  z-index: 25;
+  line-height: 1.4;
+}
+
+.wl-toast__close {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  background: none;
+  border: none;
+  color: rgba(255,255,255,0.7);
+  font-size: 1rem;
+  cursor: pointer;
+  padding: 0.2rem 0.4rem;
+  border-radius: 4px;
+  line-height: 1;
+}
+.wl-toast__close:hover { color: #fff; background: rgba(255,255,255,0.15); }
+
+.wl-toast__title {
+  font-weight: 700;
+  font-size: 0.9rem;
+  margin: 0 0 0.35rem;
+  padding-right: 1.5rem;
+}
+
+.wl-toast__body {
+  font-size: 0.85rem;
+  color: rgba(255,255,255,0.85);
+  margin: 0;
 }
 
 .landing-role-card:hover {

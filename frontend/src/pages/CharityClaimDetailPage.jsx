@@ -26,6 +26,14 @@ export default function CharityClaimDetailPage({
   );
   const isQueued = listing ? selectedClaimIds.includes(listing.id) : false;
 
+  // Check sessionStorage for an existing queue entry for this listing.
+  const joinedQueueEntry = useMemo(() => {
+    try {
+      const data = JSON.parse(sessionStorage.getItem("joinedWaitlist") || "{}");
+      return listing ? (data[listing.id] ?? null) : null;
+    } catch { return null; }
+  }, [listing]);
+
   async function handleClaim() {
     if (!listing) return;
     setIsSubmitting(true);
@@ -33,7 +41,7 @@ export default function CharityClaimDetailPage({
     setWaitlistInfo(null);
 
     try {
-      await submitClaim({
+      const result = await submitClaim({
         listing_id: listing.id,
         charity_id: Number(authUser?.userId),
         listing_version: listing.version ?? 0,
@@ -171,7 +179,26 @@ export default function CharityClaimDetailPage({
                     </p>
                   )}
 
-                  {waitlistPosition != null ? (
+                  {/* Show queue status from sessionStorage if charity already joined */}
+                  {joinedQueueEntry ? (
+                    <div>
+                      <p className="claim-page__queue-note" role="status" style={{ fontWeight: 700, color: "#2e7d52" }}>
+                        {joinedQueueEntry.status === "OFFERED"
+                          ? "You have a slot offer — return to the listings page to Accept or Decline."
+                          : joinedQueueEntry.position != null && joinedQueueEntry.position > 0
+                            ? `You are #${joinedQueueEntry.position} in the queue. (${joinedQueueEntry.status})`
+                            : "You are in the queue. Position will be assigned when the window closes."}
+                      </p>
+                      <button
+                        type="button"
+                        className="cart-summary__checkout"
+                        onClick={() => navigate("/charity")}
+                        style={{ marginTop: "0.75rem" }}
+                      >
+                        Back to listings
+                      </button>
+                    </div>
+                  ) : waitlistPosition != null ? (
                     <p className="claim-page__queue-note" role="status">
                       You joined the waitlist.
                       {waitlistPosition > 0

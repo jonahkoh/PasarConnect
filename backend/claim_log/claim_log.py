@@ -77,6 +77,20 @@ async def get_logs_by_charity(charity_id: int, db: AsyncSession = Depends(get_db
     return list(rows)
 
 
+@app.get("/logs/listing/{listing_id}/active", response_model=LogResponse)
+async def get_active_claim_for_listing(listing_id: int, db: AsyncSession = Depends(get_db)):
+    """Return the most recent PENDING_COLLECTION or AWAITING_VENDOR_APPROVAL claim for a listing."""
+    row = await db.scalar(
+        select(ClaimRecord)
+        .where(ClaimRecord.listing_id == listing_id)
+        .where(ClaimRecord.status.in_([ClaimStatus.PENDING_COLLECTION, ClaimStatus.AWAITING_VENDOR_APPROVAL]))
+        .order_by(ClaimRecord.created_at.desc())
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"No active claim for listing {listing_id}")
+    return row
+
+
 @app.patch("/logs/{claim_id}", response_model=LogResponse)
 async def update_log_status(claim_id: int, payload: LogUpdate, db: AsyncSession = Depends(get_db)):
     record = await db.get(ClaimRecord, claim_id)

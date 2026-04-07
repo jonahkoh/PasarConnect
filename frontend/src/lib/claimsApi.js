@@ -89,3 +89,71 @@ export async function postArrive(claim_id, token) {
   }
   return data;
 }
+
+/**
+ * GET /api/claims/mine
+ * Returns all claims for the authenticated charity (from JWT sub).
+ * Shape: [{ id, listing_id, charity_id, listing_version, status, created_at, updated_at }]
+ */
+export async function fetchMyClaims(token) {
+  const res = await fetch(`${CLAIMS_BASE}/mine`, { headers: authHeaders(token) });
+  if (!res.ok) throw new Error(`Fetch my claims failed (${res.status})`);
+  return res.json();
+}
+
+/**
+ * GET /api/claims/listing/{listing_id}/active
+ * Returns the current pending claim for a listing (for vendor use).
+ * Shape: { id, listing_id, charity_id, status, ... }
+ */
+export async function fetchActiveClaimForListing(listing_id, token) {
+  const res = await fetch(`${CLAIMS_BASE}/listing/${listing_id}/active`, {
+    headers: authHeaders(token),
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`Fetch active claim failed (${res.status})`);
+  return res.json();
+}
+
+/**
+ * POST /api/claims/{listing_id}/waitlist/accept
+ * Charity accepts an OFFERED waitlist slot.
+ * Body: { charity_id }
+ * Returns: claim record { id, listing_id, charity_id, status, ... }
+ */
+export async function acceptWaitlistOffer({ listing_id, charity_id, token }) {
+  const res = await fetch(`${CLAIMS_BASE}/${listing_id}/waitlist/accept`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
+    body: JSON.stringify({ charity_id }),
+  });
+  const data = await res.json().catch(() => null);
+  if (!res.ok) {
+    const err = new Error(extractMessage(data, `Accept offer failed (${res.status})`));
+    err.status = res.status;
+    err.detail = extractDetail(data);
+    throw err;
+  }
+  return data;
+}
+
+/**
+ * POST /api/claims/{listing_id}/waitlist/decline
+ * Charity declines an OFFERED waitlist slot.
+ * Body: { charity_id }
+ */
+export async function declineWaitlistOffer({ listing_id, charity_id, token }) {
+  const res = await fetch(`${CLAIMS_BASE}/${listing_id}/waitlist/decline`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
+    body: JSON.stringify({ charity_id }),
+  });
+  const data = await res.json().catch(() => null);
+  if (!res.ok) {
+    const err = new Error(extractMessage(data, `Decline offer failed (${res.status})`));
+    err.status = res.status;
+    err.detail = extractDetail(data);
+    throw err;
+  }
+  return data;
+}

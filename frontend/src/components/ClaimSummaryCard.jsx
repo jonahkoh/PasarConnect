@@ -17,6 +17,9 @@ function formatSummary(summary) {
   if (summary.unavailable > 0) {
     parts.push(`${summary.unavailable} no longer available`);
   }
+  if (summary.queue_window > 0) {
+    parts.push(`${summary.queue_window} in queue window (join below)`);
+  }
 
   return parts.join(", ");
 }

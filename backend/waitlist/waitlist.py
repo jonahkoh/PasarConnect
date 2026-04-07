@@ -55,6 +55,22 @@ async def health():
     return {"status": "healthy", "service": "waitlist"}
 
 
+@app.get("/waitlist/queuing-listings")
+async def get_queuing_listing_ids():
+    """
+    Returns all distinct listing_ids that currently have at least one QUEUING entry.
+    Used by the Claim Service on startup to hydrate its background resolution set.
+    """
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(
+            select(WaitlistEntry.listing_id).where(
+                WaitlistEntry.status == WaitlistEntryStatus.QUEUING
+            ).distinct()
+        )
+        listing_ids = result.scalars().all()
+    return {"listing_ids": listing_ids}
+
+
 # ── Charity-facing endpoints ───────────────────────────────────────────────────
 
 @app.post("/waitlist/{listing_id}/entries", response_model=WaitlistPosition, status_code=201)

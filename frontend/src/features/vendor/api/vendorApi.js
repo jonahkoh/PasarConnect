@@ -35,7 +35,7 @@ function normalizeVendorListing(raw) {
     status: raw.status,
     expiryLabel,
     pickupWindow: "Check listing",
-    imageUrl: raw.image_url ?? null,
+    imageUrl: raw.image_url?.startsWith("http") ? raw.image_url : null,
     lastUpdatedLabel: raw.updated_at
       ? `Updated ${new Date(raw.updated_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
       : "",

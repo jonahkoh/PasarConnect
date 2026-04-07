@@ -13,6 +13,8 @@ from datetime import datetime, timezone, timedelta
 from typing import Annotated
 
 import grpc
+import httpx
+import asyncio
 import claim_log_pb2
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException
@@ -23,7 +25,7 @@ import publisher
 import waitlist_grpc_client
 import waitlist_router
 from schemas import ClaimCreate, ClaimResponse, CancelClaimRequest
-from waitlist_router import try_promote_next, _is_window_active, has_active_queue
+from waitlist_router import try_promote_next, _is_window_active, has_active_queue, queue_resolution_loop, _pending_resolution
 from shared.jwt_auth import verify_jwt_token
 from verification_client import CharityNotEligibleError, cancel_claim_quota, record_noshow, verify_charity  #need to separate verification logic into a new service!
 
@@ -33,6 +35,10 @@ logger = logging.getLogger(__name__)
 
 CANCEL_WINDOW_MINUTES = int(os.getenv("CANCEL_WINDOW_MINUTES", "15"))
 CANCEL_WINDOW = timedelta(minutes=CANCEL_WINDOW_MINUTES)
+
+# Internal HTTP base URL for the Claim Log service (not exposed through Kong).
+CLAIM_LOG_HTTP = os.getenv("CLAIM_LOG_HTTP_URL", "http://claim-log-service:8006")
+WAITLIST_HTTP  = os.getenv("WAITLIST_SERVICE_URL", "http://waitlist-service:8010")
 
 
 def _within_cancel_window(created_at_str: str) -> bool:
@@ -50,7 +56,36 @@ def _within_cancel_window(created_at_str: str) -> bool:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Hydrate the resolution set with any QUEUING entries that survived a restart.
+    # Delay 5s to let inventory gRPC become ready before we attempt connections.
+    await asyncio.sleep(5)
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(f"{WAITLIST_HTTP}/waitlist/queuing-listings")
+        if resp.status_code == 200:
+            for listing_id in resp.json().get("listing_ids", []):
+                # Check window still active so we don't re-schedule already-expired ones
+                is_active, _, window_closes_at = await _is_window_active(listing_id)
+                if is_active and window_closes_at:
+                    from datetime import datetime, timezone
+                    closes_dt = datetime.fromisoformat(window_closes_at)
+                    if closes_dt.tzinfo is None:
+                        closes_dt = closes_dt.replace(tzinfo=timezone.utc)
+                    _pending_resolution[listing_id] = closes_dt
+                elif not is_active:
+                    # Window already expired — resolve immediately in background
+                    from waitlist_router import _resolve_queue_window
+                    asyncio.create_task(_resolve_queue_window(listing_id))
+    except Exception as exc:
+        logger.warning("Startup hydration of pending queue resolutions failed (non-fatal): %s", exc)
+
+    task = asyncio.create_task(queue_resolution_loop())
     yield
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
 
 
 app = FastAPI(title="PasarConnect — Claim Service", lifespan=lifespan)
@@ -62,6 +97,29 @@ app.include_router(waitlist_router.router)
 @app.get("/health")
 async def health():
     return {"status": "healthy", "service": "claim"}
+
+
+@app.get("/claims/mine")
+async def get_my_claims(token_payload: Annotated[dict, Depends(verify_jwt_token)]):
+    """Return all claims for the authenticated charity user, ordered newest first."""
+    charity_id = int(token_payload["sub"])
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        resp = await client.get(f"{CLAIM_LOG_HTTP}/logs/{charity_id}")
+    if resp.status_code != 200:
+        raise HTTPException(status_code=502, detail="Claim log unavailable")
+    return resp.json()
+
+
+@app.get("/claims/listing/{listing_id}/active")
+async def get_active_claim_for_listing(listing_id: int):
+    """Return the current PENDING_COLLECTION / AWAITING_VENDOR_APPROVAL claim for a listing."""
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        resp = await client.get(f"{CLAIM_LOG_HTTP}/logs/listing/{listing_id}/active")
+    if resp.status_code == 404:
+        raise HTTPException(status_code=404, detail="No active claim for this listing")
+    if resp.status_code != 200:
+        raise HTTPException(status_code=502, detail="Claim log unavailable")
+    return resp.json()
 
 
 async def _verify_claim_eligibility(charity_id: int, listing_id: int) -> None:
