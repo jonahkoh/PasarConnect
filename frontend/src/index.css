@@ -1923,6 +1923,9 @@ a {
     radial-gradient(circle at top left, rgba(123, 201, 167, 0.2), transparent 34%),
     linear-gradient(135deg, #fdfbf7 0%, #f4efe7 100%);
   box-shadow: 0 24px 50px rgba(73, 56, 36, 0.08);
+  /* Contain Leaflet's internal stacking context so its z-indexes (400-700)
+     don't bleed out and overlap fixed overlays (modals, nav bars). */
+  isolation: isolate;
 }
 
 .live-food-map__header {
@@ -2729,7 +2732,7 @@ a {
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.45);
-  z-index: 20;
+  z-index: 1050;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2744,7 +2747,7 @@ a {
   padding: 2rem 2rem 1.5rem;
   max-width: 440px;
   width: 100%;
-  z-index: 21;
+  z-index: 1051;
 }
 
 .wl-modal__close {

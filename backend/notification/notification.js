@@ -164,6 +164,9 @@ function handleClaimEvent(routingKey, payload) {
     case "claim.waitlist.offered":
       emitToRooms(`charity:${payload.charity_id}`, "claim:offered", payload);
       break;
+    case "claim.waitlist.position":
+      emitToRooms(`charity:${payload.charity_id}`, "claim:queued", payload);
+      break;
     case "claim.waitlist.cancelled":
       emitToRooms(`listing:${payload.listing_id}`, "claim:waitlist_closed", payload);
       break;
@@ -261,7 +264,8 @@ async function startConsumer() {
   await ch.assertQueue(QUEUES.claimEvents, { durable: true });
   for (const key of ["claim.success", "claim.cancelled", "claim.failure",
                      "claim.arrived", "claim.completed",
-                     "claim.waitlist.promoted", "claim.waitlist.offered", "claim.waitlist.cancelled"]) {
+                     "claim.waitlist.promoted", "claim.waitlist.offered",
+                     "claim.waitlist.position", "claim.waitlist.cancelled"]) {
     await ch.bindQueue(QUEUES.claimEvents, PASARCONNECT_EXCHANGE, key);
   }
   ch.consume(QUEUES.claimEvents, (msg) => {

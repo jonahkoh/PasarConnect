@@ -58,7 +58,9 @@ function parseClaimError(error) {
 }
 
 function isCharityEligible(item) {
-  return item.status === "AVAILABLE" && Boolean(item.charityWindow);
+  // Show any AVAILABLE listing — PENDING_COLLECTION (being offered to queue) is filtered out,
+  // but queue members' listings are re-included explicitly in filteredListings below.
+  return item.status === "AVAILABLE";
 }
 
 function isInQueueWindow(item, now) {
@@ -103,7 +105,13 @@ export default function CharityClaimPage({
   const [joiningQueueFor, setJoiningQueueFor] = useState(null); // listing_id currently being joined
 
   // Offered slots pushed via socket when charity wins the waitlist queue.
-  const [offeredListings, setOfferedListings] = useState([]);    // [{ listing_id, message, ... }]
+  // Initialised from sessionStorage so offers received while on another page are not lost.
+  const [offeredListings, setOfferedListings] = useState(() => {
+    try { return JSON.parse(sessionStorage.getItem("pendingOffers") || "[]"); } catch { return []; }
+  });
+  useEffect(() => {
+    try { sessionStorage.setItem("pendingOffers", JSON.stringify(offeredListings)); } catch {}
+  }, [offeredListings]);
   const [acceptingOfferId, setAcceptingOfferId] = useState(null);
   const [decliningOfferId, setDecliningOfferId] = useState(null);
   // Popup shown briefly after a charity joins the queue (shows their position).
@@ -176,8 +184,20 @@ export default function CharityClaimPage({
           : prev
       );
     }
+    function handleQueued(payload) {
+      // Update joinedWaitlist with confirmed rank from backend.
+      setJoinedWaitlist((prev) =>
+        prev[payload.listing_id]
+          ? { ...prev, [payload.listing_id]: { status: "WAITING", position: payload.position } }
+          : prev
+      );
+    }
     socket.on("claim:offered", handleOffered);
-    return () => socket.off("claim:offered", handleOffered);
+    socket.on("claim:queued", handleQueued);
+    return () => {
+      socket.off("claim:offered", handleOffered);
+      socket.off("claim:queued", handleQueued);
+    };
   }, [socket]);
 
   // On mount, hydrate claim history from the DB so active claims survive page refresh/re-login.
@@ -314,6 +334,7 @@ export default function CharityClaimPage({
         token: authUser?.token,
       });
       setOfferedListings((prev) => prev.filter((o) => o.listing_id !== listing_id));
+      setJoinedWaitlist((prev) => { const n = { ...prev }; delete n[listing_id]; return n; });
     } catch {
       // Non-fatal — banner stays visible so the charity can retry.
     } finally {
@@ -335,7 +356,9 @@ export default function CharityClaimPage({
   }
 
   const filteredListings = useMemo(() => {
-    let result = listings.filter(isCharityEligible);
+    // Include AVAILABLE listings for all charities, plus any listing this charity is queued for
+    // (e.g. PENDING_COLLECTION while being offered to them or while waiting their turn).
+    let result = listings.filter((l) => isCharityEligible(l) || Boolean(joinedWaitlist[l.id]));
     const keyword = search.trim().toLowerCase();
 
     if (keyword) {
@@ -363,7 +386,7 @@ export default function CharityClaimPage({
     }
 
     return result;
-  }, [listings, search, selectedCategories, selectedPickupWindows, sortBy]);
+  }, [listings, search, selectedCategories, selectedPickupWindows, sortBy, joinedWaitlist]);
 
   const filteredMapListings = useMemo(
     () => filteredListings.filter((item) => typeof item.latitude === "number" && typeof item.longitude === "number"),

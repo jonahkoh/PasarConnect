@@ -144,7 +144,13 @@ async def _resolve_queue_window(listing_id: int) -> None:
         "_resolve_queue_window: resolved %s charities for listing %s — running promotion",
         len(ranked_entries), listing_id,
     )
-    await try_promote_next(listing_id, current_version)
+    offered_charity_id, _ = await try_promote_next(listing_id, current_version)
+
+    # Notify every WAITING charity (i.e. not the one who just got offered) of their queue rank.
+    if offered_charity_id is not None:
+        for rank, entry in enumerate(scored, 1):
+            if entry["charity_id"] != offered_charity_id:
+                await publisher.publish_waitlist_position(listing_id, entry["charity_id"], rank)
 
 
 @router.post("/{listing_id}/waitlist", response_model=WaitlistPosition, status_code=201)

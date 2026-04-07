@@ -86,11 +86,37 @@ export default function App() {
       setToast("You've been promoted in the waitlist! Open the listing to accept your slot.");
     });
 
+    // Global handler so offers are captured even when CharityClaimPage is not mounted
+    // (e.g. charity is browsing a /charity/:id detail page).
+    socket.on("claim:offered", (payload) => {
+      try {
+        const pending = JSON.parse(sessionStorage.getItem("pendingOffers") || "[]");
+        if (!pending.some((o) => o.listing_id === payload.listing_id)) {
+          sessionStorage.setItem("pendingOffers", JSON.stringify([...pending, payload]));
+        }
+      } catch { /* non-fatal */ }
+      setToast("You've been offered a listing slot! Go to the Claim page to accept.");
+    });
+
+    // Notify waiting charities of their queue position after window resolution.
+    socket.on("claim:queued", (payload) => {
+      try {
+        const wl = JSON.parse(sessionStorage.getItem("joinedWaitlist") || "{}");
+        if (wl[payload.listing_id]) {
+          wl[payload.listing_id] = { status: "WAITING", position: payload.position };
+          sessionStorage.setItem("joinedWaitlist", JSON.stringify(wl));
+        }
+      } catch { /* non-fatal */ }
+      setToast(`Queue position #${payload.position} assigned. You'll be notified when it's your turn.`);
+    });
+
     return () => {
       socket.off("listing:new");
       socket.off("listing:window_closed");
       socket.off("claim:success");
       socket.off("claim:promoted");
+      socket.off("claim:offered");
+      socket.off("claim:queued");
     };
   }, [socket]);
 

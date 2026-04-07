@@ -146,6 +146,20 @@ async def publish_claim_completed(claim_id: int, listing_id: int, charity_id: in
     await _publish("claim.completed", payload)
 
 
+async def publish_waitlist_position(listing_id: int, charity_id: int, position: int) -> None:
+    """
+    Fired after queue-window resolution to notify each WAITING charity of their rank.
+    Notification Service emits  claim:queued  to  charity:{charity_id}.
+    """
+    payload = {
+        "event": "claim.waitlist.position",
+        "listing_id": listing_id,
+        "charity_id": charity_id,
+        "position": position,
+    }
+    await _publish("claim.waitlist.position", payload)
+
+
 async def publish_waitlist_cancelled(listing_id: int) -> None:
     """
     Fired when an item is sold and all remaining queue members are cancelled.
