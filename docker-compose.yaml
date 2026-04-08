@@ -360,6 +360,36 @@ services:
       rabbitmq:
         condition: service_healthy
 
+  # ── Audit Store ──────────────────────────────────────────────────────────────
+
+  mongo:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    volumes:
+      - auditor-db-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+  auditor-service:
+    build:
+      context: ./backend
+      dockerfile: auditor/Dockerfile
+    restart: on-failure
+    environment:
+      RABBITMQ_HOST: ${RABBITMQ_HOST}
+      RABBITMQ_USER: ${RABBITMQ_USER}
+      RABBITMQ_PASS: ${RABBITMQ_PASS}
+      MONGO_URI:     mongodb://mongo:27017/pasarconnect_audit
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+
   # ── API Gateway ────────────────────────────────────────────────────────────
 
   kong:
@@ -395,3 +425,4 @@ volumes:
   verification-db-data:
   waitlist-db-data:
   rabbitmq-data:
+  auditor-db-data:

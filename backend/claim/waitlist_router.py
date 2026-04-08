@@ -284,7 +284,7 @@ async def accept_waitlist_offer(listing_id: int, body: WaitlistJoin):
             logger.error("Rollback failed after claim log failure for listing=%s", listing_id)
         raise HTTPException(status_code=503, detail="Claim could not be finalized. Please retry.")
 
-    await publisher.publish_claim_success(
+    await publisher.publish_claim_created(
         claim_id=claim_record.id, listing_id=listing_id, charity_id=charity_id,
     )
     logger.info("Waitlist accept: charity %s accepted slot for listing %s (claim %s)",

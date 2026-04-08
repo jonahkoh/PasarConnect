@@ -7,6 +7,7 @@ topic exchange so the Auditor Service (and any future subscribers) can react.
 Failure to publish is NON-FATAL — the compensating transaction (refund) has
 already been executed.  We log the error so ops can investigate.
 """
+import datetime
 import json
 import logging
 import os
@@ -16,13 +17,16 @@ import aio_pika
 RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "localhost")
 RABBITMQ_USER = os.getenv("RABBITMQ_USER", "guest")
 RABBITMQ_PASS = os.getenv("RABBITMQ_PASS", "guest")
-EXCHANGE_NAME = "PasarConnect"
+EXCHANGE_NAME = "pasarconnect.events"
+SERVICE_NAME  = "payment"
 
 logger = logging.getLogger(__name__)
 
 
 async def _publish(routing_key: str, message_body: dict) -> None:
     """Internal helper — opens a connection, publishes one message, closes."""
+    message_body.setdefault("service", SERVICE_NAME)
+    message_body.setdefault("timestamp", datetime.datetime.now(datetime.timezone.utc).isoformat())
     try:
         connection = await aio_pika.connect_robust(
             f"amqp://{RABBITMQ_USER}:{RABBITMQ_PASS}@{RABBITMQ_HOST}/"
@@ -151,21 +155,23 @@ async def publish_payment_forfeited(
     )
 
 
-async def publish_payment_failure(
+async def publish_payment_fulfillment_failed(
     transaction_id: str,
     listing_id: int,
     reason: str,
+    reason_code: str = "INVENTORY_UNAVAILABLE",
 ) -> None:
     """
-    Unexpected system error during payment processing (compensating transaction).
-    Routing key: payment.failure — ops/auditor only, no user-facing socket emit.
+    Stripe charged the user but inventory update failed — compensating refund issued.
+    Routing key: payment.fulfillment.failed — ops/auditor only, no user-facing socket emit.
     """
     await _publish(
-        "payment.failure",
+        "payment.fulfillment.failed",
         {
-            "event"          : "payment.failure",
+            "event"          : "payment.fulfillment.failed",
             "transaction_id" : transaction_id,
             "listing_id"     : listing_id,
+            "reason_code"    : reason_code,
             "reason"         : reason,
         },
     )
@@ -188,5 +194,28 @@ async def publish_payment_arrived(
             "transaction_id" : transaction_id,
             "listing_id"     : listing_id,
             "user_id"        : user_id,
+        },
+    )
+
+
+async def publish_payment_intent_created(
+    transaction_id: str,
+    listing_id: int,
+    user_id: int,
+    amount: float,
+) -> None:
+    """
+    Payment intent created — listing is now PENDING_PAYMENT.
+    Routing key: payment.intent.created
+    Auditor uses this as the start marker for the full payment lifecycle.
+    """
+    await _publish(
+        "payment.intent.created",
+        {
+            "event"          : "payment.intent.created",
+            "transaction_id" : transaction_id,
+            "listing_id"     : listing_id,
+            "user_id"        : user_id,
+            "amount"         : amount,
         },
     )

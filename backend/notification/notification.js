@@ -3,9 +3,9 @@
  *
  * Architecture:
  *   - Express + Socket.io on the same http.Server (port 8011)
- *   - RabbitMQ consumer: two exchanges
- *       pasarconnect.events   (listing-service events)
- *       PasarConnect          (claim + payment events)
+ *   - RabbitMQ consumer: one unified exchange
+ *       pasarconnect.events   (all services: listing, claim, payment)
+ *       pasarconnect.dlx      (listing TTL dead-letter for window.closed events)
  *   - JWT auth on every Socket.io handshake (RS256, same key as all other services)
  *
  * Socket.io rooms:
@@ -15,15 +15,18 @@
  *   listing:{listing_id} — per-listing room; client emits "subscribe:listing"
  *
  * Emit mapping (RabbitMQ routing key → Socket.io event → room):
- *   listing.created          → listing:new           → listings
- *   listing.window.closed    → listing:window_closed  → listings
- *   claim.success            → claim:success          → charity:{charity_id} + listing:{listing_id}
- *   claim.cancelled          → claim:cancelled        → charity:{charity_id} + listing:{listing_id}
- *   claim.waitlist.promoted  → claim:promoted         → charity:{charity_id}
- *   claim.waitlist.offered   → claim:offered          → charity:{charity_id}
- *   claim.waitlist.cancelled → claim:waitlist_closed  → listing:{listing_id}
- *   payment.success          → payment:success        → listing:{listing_id}
- *   payment.failure          → (log only)
+ *   listing.created               → listing:new            → charities
+ *   listing.window.closed         → listing:window_closed  → listings
+ *   claim.created                 → claim:success          → charity:{charity_id} + listing:{listing_id}
+ *   claim.cancelled               → claim:cancelled        → charity:{charity_id} + listing:{listing_id}
+ *   claim.waitlist.promoted       → claim:promoted         → charity:{charity_id}
+ *   claim.waitlist.offered        → claim:offered          → charity:{charity_id}
+ *   claim.waitlist.cancelled      → claim:waitlist_closed  → listing:{listing_id}
+ *   payment.success               → payment:success        → listing:{listing_id}
+ *   payment.fulfillment.failed    → payment:error          → listing:{listing_id}  (log only)
+ *   payment.intent.created        → (log only)
+ *   claim.failed                  → (log only)
+ *   claim.noshow                  → (log only)
  *
  * HTTP endpoints:
  *   GET /health       — liveness probe (also exposes connected socket count)
@@ -61,7 +64,7 @@ try {
 // ── Exchange / queue names ─────────────────────────────────────────────────────
 const EVENT_EXCHANGE        = "pasarconnect.events";  // listing-service
 const DLX_EXCHANGE          = "pasarconnect.dlx";     // listing TTL dead-letter
-const PASARCONNECT_EXCHANGE = "PasarConnect";          // claim + payment services
+const PASARCONNECT_EXCHANGE = "pasarconnect.events";    // claim + payment (now unified with listing)
 
 const QUEUES = {
   listingCreated:      "notification.listing.created",
@@ -155,7 +158,7 @@ function emitToRooms(rooms, event, payload) {
 // ── Claim event dispatcher ─────────────────────────────────────────────────────
 function handleClaimEvent(routingKey, payload) {
   switch (routingKey) {
-    case "claim.success":
+    case "claim.created":
       emitToRooms([`charity:${payload.charity_id}`, `listing:${payload.listing_id}`], "claim:success", payload);
       break;
     case "claim.cancelled":
@@ -181,8 +184,11 @@ function handleClaimEvent(routingKey, payload) {
       // Vendor approved collection; notify the charity.
       emitToRooms(`charity:${payload.charity_id}`, "claim:completed", payload);
       break;
-    case "claim.failure":
-      console.warn("[claim.failure]", JSON.stringify(payload));
+    case "claim.failed":
+      console.warn("[claim.failed]", JSON.stringify(payload));
+      break;
+    case "claim.noshow":
+      console.warn("[claim.noshow]", JSON.stringify(payload));
       break;
     default:
       console.warn("[amqp] Unhandled claim key:", routingKey);
@@ -228,10 +234,13 @@ function handlePaymentEvent(routingKey, payload) {
       // Buyer is on-site — notify the vendor via the listing room.
       emitToRooms(`listing:${payload.listing_id}`, "payment:arrived", payload);
       break;
-    case "payment.failure":
-      // Unexpected system error (compensating transaction) — ops/auditor only.
-      console.warn("[payment.failure]", JSON.stringify(payload));
+    case "payment.fulfillment.failed":
+      // Inventory failed post-charge — compensating refund issued; ops/auditor only.
+      console.warn("[payment.fulfillment.failed]", JSON.stringify(payload));
       emitToRooms(`listing:${payload.listing_id}`, "payment:error", payload);
+      break;
+    case "payment.intent.created":
+      // Auditor trail only — no user-facing socket emit needed.
       break;
     default:
       console.warn("[amqp] Unhandled payment key:", routingKey);
@@ -300,8 +309,8 @@ async function startConsumer() {
 
   // Queue: claim events (claim.success, claim.cancelled, claim.waitlist.*)
   await ch.assertQueue(QUEUES.claimEvents, { durable: true });
-  for (const key of ["claim.success", "claim.cancelled", "claim.failure",
-                     "claim.arrived", "claim.completed",
+  for (const key of ["claim.created", "claim.cancelled", "claim.failed",
+                     "claim.noshow", "claim.arrived", "claim.completed",
                      "claim.waitlist.promoted", "claim.waitlist.offered",
                      "claim.waitlist.position", "claim.waitlist.cancelled"]) {
     await ch.bindQueue(QUEUES.claimEvents, PASARCONNECT_EXCHANGE, key);
@@ -318,7 +327,7 @@ async function startConsumer() {
   for (const key of [
     "payment.success", "payment.collected",
     "payment.refunded", "payment.cancelled", "payment.forfeited",
-    "payment.failure", "payment.arrived",
+    "payment.fulfillment.failed", "payment.arrived", "payment.intent.created",
   ]) {
     await ch.bindQueue(QUEUES.paymentEvents, PASARCONNECT_EXCHANGE, key);
   }

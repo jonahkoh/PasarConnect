@@ -229,9 +229,10 @@ async def create_claim(body: ClaimCreate, token_payload: Annotated[dict, Depends
         # free to retry without the slot being silently consumed.
         await cancel_claim_quota(charity_id=body.charity_id, listing_id=body.listing_id)
 
-        await publisher.publish_claim_failure(
+        await publisher.publish_claim_failed(
             listing_id=body.listing_id,
             charity_id=body.charity_id,
+            reason_code="CLAIM_LOG_UNAVAILABLE",
             reason=f"Claim log handoff failed: {exc}",
         )
 
@@ -245,8 +246,8 @@ async def create_claim(body: ClaimCreate, token_payload: Annotated[dict, Depends
             },
         )
 
-    # 4) Publish success event (best effort).
-    await publisher.publish_claim_success(
+    # 4) Publish created event (best effort).
+    await publisher.publish_claim_created(
         claim_id=claim_record.id,
         listing_id=claim_record.listing_id,
         charity_id=claim_record.charity_id,
@@ -362,7 +363,7 @@ async def noshow_claim(claim_id: int):
       3. Mark claim CANCELLED in Claim Log.
       4. Rollback Inventory → AVAILABLE.
       5. Record no-show in Verification Service (updates charity standing/ban).
-      6. Publish claim.cancelled event.
+      6. Publish claim.noshow event (distinct from voluntary claim.cancelled).
     """
     # 1. Fetch claim record
     try:
@@ -403,7 +404,7 @@ async def noshow_claim(claim_id: int):
             available_version=available_version,
         )
         if not promoted_charity_id:
-            await publisher.publish_claim_cancelled(
+            await publisher.publish_claim_noshow(
                 claim_id=claim_id,
                 listing_id=claim.listing_id,
                 charity_id=claim.charity_id,

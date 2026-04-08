@@ -3,6 +3,7 @@ Best-effort RabbitMQ publisher.
 Failure to publish does NOT fail the claim — it just logs a warning.
 Consumers: Notification Service, Auditor Service.
 """
+import datetime
 import json
 import logging
 import os
@@ -12,13 +13,16 @@ import aio_pika
 RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "localhost")
 RABBITMQ_USER = os.getenv("RABBITMQ_USER", "guest")
 RABBITMQ_PASS = os.getenv("RABBITMQ_PASS", "guest")
-EXCHANGE_NAME = "PasarConnect"
+EXCHANGE_NAME = "pasarconnect.events"
+SERVICE_NAME  = "claim"
 
 logger = logging.getLogger(__name__)
 
 
 async def _publish(routing_key: str, payload: dict) -> None:
     """Publish a durable JSON event to RabbitMQ; logs warning on any failure."""
+    payload.setdefault("service", SERVICE_NAME)
+    payload.setdefault("timestamp", datetime.datetime.now(datetime.timezone.utc).isoformat())
     try:
         connection = await aio_pika.connect_robust(f"amqp://{RABBITMQ_USER}:{RABBITMQ_PASS}@{RABBITMQ_HOST}/")
         async with connection:
@@ -42,24 +46,25 @@ async def _publish(routing_key: str, payload: dict) -> None:
         logger.warning("RabbitMQ publish failed (routing_key=%s): %s", routing_key, exc)
 
 
-async def publish_claim_success(claim_id: int, listing_id: int, charity_id: int) -> None:
+async def publish_claim_created(claim_id: int, listing_id: int, charity_id: int) -> None:
     payload = {
-        "event": "claim.success",
+        "event": "claim.created",
         "claim_id": claim_id,
         "listing_id": listing_id,
         "charity_id": charity_id,
     }
-    await _publish("claim.success", payload)
+    await _publish("claim.created", payload)
 
 
-async def publish_claim_failure(listing_id: int, charity_id: int, reason: str) -> None:
+async def publish_claim_failed(listing_id: int, charity_id: int, reason: str, reason_code: str = "CLAIM_LOG_UNAVAILABLE") -> None:
     payload = {
-        "event": "claim.failure",
+        "event": "claim.failed",
         "listing_id": listing_id,
         "charity_id": charity_id,
+        "reason_code": reason_code,
         "reason": reason,
     }
-    await _publish("claim.failure", payload)
+    await _publish("claim.failed", payload)
 
 
 async def publish_claim_cancelled(claim_id: int, listing_id: int, charity_id: int) -> None:
@@ -171,3 +176,17 @@ async def publish_waitlist_cancelled(listing_id: int) -> None:
         "message": "The listing you were waiting for has been collected. Queue is now closed.",
     }
     await _publish("claim.waitlist.cancelled", payload)
+
+
+async def publish_claim_noshow(claim_id: int, listing_id: int, charity_id: int) -> None:
+    """
+    Fired when a vendor records a charity no-show.
+    Routing key: claim.noshow — distinct from voluntary cancellation (claim.cancelled).
+    """
+    payload = {
+        "event": "claim.noshow",
+        "claim_id": claim_id,
+        "listing_id": listing_id,
+        "charity_id": charity_id,
+    }
+    await _publish("claim.noshow", payload)

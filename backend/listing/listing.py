@@ -2,7 +2,7 @@ import asyncio
 import json
 import os
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Annotated
 
 import aio_pika
@@ -21,7 +21,7 @@ RABBITMQ_PASS = os.getenv("RABBITMQ_PASS", "guest")
 
 EVENT_EXCHANGE = "pasarconnect.events"
 EVENT_ROUTING_KEY = "listing.created"
-ERROR_ROUTING_KEY = "listing.error"    # published when listing creation partially fails
+ERROR_ROUTING_KEY = "listing.failed"    # published when listing creation partially fails
 DELAY_QUEUE = "listing.delay.window"    # name is TTL-agnostic; actual TTL driven by QUEUE_WINDOW_MINUTES
 # TTL derived from the same env var as Claim/Payment Services so all three stay in sync.
 _QUEUE_WINDOW_MINUTES = float(os.getenv("QUEUE_WINDOW_MINUTES", "5"))
@@ -108,7 +108,8 @@ async def _publish_error_event(error_type: str, detail: str, listing_id: int | N
     if _mq_exchange is None:
         return
     try:
-        payload = {"event": "listing.error", "error_type": error_type, "detail": detail}
+        ts = datetime.now(tz=timezone.utc).isoformat()
+        payload = {"event": "listing.failed", "service": "listing", "timestamp": ts, "error_type": error_type, "detail": detail}
         if listing_id is not None:
             payload["listing_id"] = listing_id
         await _mq_exchange.publish(
@@ -126,21 +127,31 @@ async def _publish_error_event(error_type: str, detail: str, listing_id: int | N
 
 
 async def _publish_created_events(listing_id: int) -> None:
-    message_payload = {
-        "event": "listing.created",
-        "listing_id": listing_id,
-    }
-    message = aio_pika.Message(
-        body=json.dumps(message_payload).encode("utf-8"),
-        content_type="application/json",
-        delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
-    )
+    ts = datetime.now(tz=timezone.utc).isoformat()
+
+    def _msg(body: dict) -> aio_pika.Message:
+        return aio_pika.Message(
+            body=json.dumps(body).encode("utf-8"),
+            content_type="application/json",
+            delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
+        )
 
     await asyncio.gather(
-        # Immediate event — notification.js subscribes here for listing.created
-        _mq_exchange.publish(message, routing_key=EVENT_ROUTING_KEY),
-        # Delayed copy — delivered to DLX as listing.window.closed after DELAY_TTL_MS
-        _mq_channel.default_exchange.publish(message, routing_key=DELAY_QUEUE),
+        # Immediate: listing.created — notification.js routes to charities room
+        _mq_exchange.publish(
+            _msg({"event": "listing.created",       "service": "listing", "timestamp": ts, "listing_id": listing_id}),
+            routing_key=EVENT_ROUTING_KEY,
+        ),
+        # Immediate: listing.window.opened — auditor window-start marker
+        _mq_exchange.publish(
+            _msg({"event": "listing.window.opened", "service": "listing", "timestamp": ts, "listing_id": listing_id}),
+            routing_key="listing.window.opened",
+        ),
+        # Delayed: dead-letters to pasarconnect.dlx as listing.window.closed after DELAY_TTL_MS
+        _mq_channel.default_exchange.publish(
+            _msg({"event": "listing.window.closed", "service": "listing", "timestamp": ts, "listing_id": listing_id}),
+            routing_key=DELAY_QUEUE,
+        ),
     )
 
 

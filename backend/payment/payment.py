@@ -168,7 +168,6 @@ async def create_payment_intent(
 
     # Step 0b — Block purchase while the charity queue window is active
     listing_price = 0.0
-    listing_info = None  # hoisted so Step 1 self-heal can inspect it
     try:
         listing_info = await inventory_client.get_listing(payload.listing_id)
         listing_price = listing_info.price  # 0.0 means no price set
@@ -211,30 +210,8 @@ async def create_payment_intent(
         if code == grpc.StatusCode.NOT_FOUND:
             raise HTTPException(status_code=404, detail="Listing not found.")
         if code == grpc.StatusCode.ABORTED:
-            # Self-heal: if Step 0b showed the listing was already PENDING_PAYMENT,
-            # our lock may be stale (prior payment was refunded but inventory rollback
-            # failed).  Attempt rollback with the known version then retry the lock.
-            if listing_info is not None and listing_info.status == "PENDING_PAYMENT":
-                try:
-                    rolled_back_version = await inventory_client.rollback_listing_to_available(
-                        payload.listing_id, listing_info.version
-                    )
-                    new_version = await inventory_client.lock_listing_pending_payment(
-                        payload.listing_id, rolled_back_version
-                    )
-                    logger.info(
-                        "Self-healed stuck PENDING_PAYMENT listing %s (version %s → %s).",
-                        payload.listing_id, listing_info.version, new_version,
-                    )
-                except Exception as heal_exc:
-                    logger.warning(
-                        "Self-heal failed for listing %s: %s", payload.listing_id, heal_exc
-                    )
-                    raise HTTPException(status_code=409, detail="Listing is no longer available.")
-            else:
-                raise HTTPException(status_code=409, detail="Listing is no longer available.")
-        else:
-            raise HTTPException(status_code=503, detail="Inventory service unavailable.")
+            raise HTTPException(status_code=409, detail="Listing is no longer available.")
+        raise HTTPException(status_code=503, detail="Inventory service unavailable.")
 
     async with httpx.AsyncClient() as client:
         # Step 2 — Create PaymentIntent via Stripe Wrapper
