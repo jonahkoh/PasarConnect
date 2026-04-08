@@ -31,6 +31,7 @@ class FoodListing(Base):
         server_default=text("'AVAILABLE'"),
     )
     version     : Mapped[int]                      = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    price       : Mapped[float | None]             = mapped_column(Float, nullable=True)
     latitude    : Mapped[float | None]             = mapped_column(Float, nullable=True)
     longitude   : Mapped[float | None]             = mapped_column(Float, nullable=True)
     geohash     : Mapped[str | None]               = mapped_column(String(12), nullable=True, index=True)

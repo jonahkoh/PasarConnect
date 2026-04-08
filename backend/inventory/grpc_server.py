@@ -98,6 +98,7 @@ class InventoryServicer(inventory_pb2_grpc.InventoryServiceServicer):
                 version=record.version,
                 status=record.status.value,
                 listed_at=record.created_at.isoformat() if record.created_at else "",
+                price=record.price if record.price is not None else 0.0,
             )
 
     async def LockListing(self, request, context):

@@ -26,6 +26,7 @@ message GetListingResponse {
   int32  version    = 2;
   string status     = 3;  // AVAILABLE | PENDING_COLLECTION | etc.
   string listed_at  = 4;  // ISO-8601 UTC — created_at of the listing row
+  double price      = 5;  // public sale price in SGD; 0.0 means not set
 }
 
 message CreateListingRequest {

@@ -167,8 +167,10 @@ async def create_payment_intent(
         raise HTTPException(status_code=403, detail=f"User ineligible: {exc.reason}")
 
     # Step 0b — Block purchase while the charity queue window is active
+    listing_price = 0.0
     try:
         listing_info = await inventory_client.get_listing(payload.listing_id)
+        listing_price = listing_info.price  # 0.0 means no price set
         listed_at_str = listing_info.listed_at
         if listed_at_str:
             listed_at = datetime.datetime.fromisoformat(listed_at_str)
@@ -190,6 +192,12 @@ async def create_payment_intent(
         # Fail-open: if inventory is unreachable here, let the lock attempt in Step 1 fail properly
         logger.warning("Queue-window pre-check failed for listing %s (fail-open): %s", payload.listing_id, exc)
 
+    if listing_price <= 0:
+        raise HTTPException(
+            status_code=422,
+            detail="Listing has no price set. Vendor must set a price before it can be purchased.",
+        )
+
     # Step 1 — Soft lock in Inventory
     # If the listing is already taken, gRPC returns ABORTED (version mismatch)
     # or NOT_FOUND — we let those propagate as 409 / 404 via the exception handler.
@@ -210,7 +218,7 @@ async def create_payment_intent(
         intent = await _post(
             client,
             f"{STRIPE_WRAPPER_URL}/stripe/intent",
-            {"listing_id": payload.listing_id, "amount": payload.amount},
+            {"listing_id": payload.listing_id, "amount": listing_price},
         )
 
     # Step 3 — Persist PENDING record in Payment Log via gRPC
@@ -219,7 +227,7 @@ async def create_payment_intent(
             transaction_id=intent["payment_intent_id"],
             listing_id=payload.listing_id,
             listing_version=new_version,
-            amount=payload.amount,
+            amount=listing_price,
             user_id=user_id,
         )
     except grpc.aio.AioRpcError as exc:

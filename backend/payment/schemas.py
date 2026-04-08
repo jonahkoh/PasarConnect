@@ -8,7 +8,6 @@ class PaymentIntentRequest(BaseModel):
     """Sent by the UI when a public user wants to purchase a listing."""
     listing_id      : int   = Field(..., gt=0)
     listing_version : int   = Field(..., ge=0)
-    amount          : float = Field(..., gt=0)
 
 
 class PaymentNoShowRequest(BaseModel):

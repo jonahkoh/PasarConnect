@@ -93,10 +93,12 @@ async def payment_client():
         patch.object(payment_mod.payment_log_client, "update_payment_status_with_version", new_callable=AsyncMock) as mock_update_payment_status,
         patch.object(payment_mod.publisher, "publish_payment_success", new_callable=AsyncMock) as mock_publish_success,
         patch.object(payment_mod.publisher, "publish_payment_failure", new_callable=AsyncMock) as mock_publish_failure,
+        patch.object(payment_mod.publisher, "publish_payment_collected", new_callable=AsyncMock) as mock_publish_collected,
+        patch.object(payment_mod.publisher, "publish_payment_refunded", new_callable=AsyncMock) as mock_publish_refunded,
         patch.object(payment_mod, "_post", new_callable=AsyncMock) as mock_post,
     ):
         mock_soft_lock.return_value = 7
-        mock_get_listing.return_value = SimpleNamespace(listed_at="")  # empty = window inactive
+        mock_get_listing.return_value = SimpleNamespace(listed_at="", price=25.0)  # empty = window inactive
         mock_mark_sold.return_value = 10
         mock_mark_pending_collection.return_value = 9
         mock_mark_available.return_value = 8
@@ -120,6 +122,7 @@ async def payment_client():
             listing_id=222,
             listing_version=5,
             amount=42.5,
+            user_id=42,
             updated_at=None,
             created_at="2024-01-01T00:00:00+00:00",
         )
@@ -142,6 +145,8 @@ async def payment_client():
                 "mock_update_payment_status": mock_update_payment_status,
                 "mock_publish_success": mock_publish_success,
                 "mock_publish_failure": mock_publish_failure,
+                "mock_publish_collected": mock_publish_collected,
+                "mock_publish_refunded": mock_publish_refunded,
                 "mock_post": mock_post,
             }
         finally:
@@ -157,8 +162,8 @@ async def test_health(payment_client):
 
 @pytest.mark.asyncio
 async def test_create_payment_intent_success(payment_client):
-    # user_id is no longer in the body — it comes from the JWT sub claim (mocked as 42).
-    payload = {"listing_id": 101, "listing_version": 3, "amount": 20.5}
+    # amount is now sourced from inventory listing_info.price, not the request body.
+    payload = {"listing_id": 101, "listing_version": 3}
 
     response = await payment_client["client"].post("/payments/intent", json=payload)
 
@@ -172,7 +177,7 @@ async def test_create_payment_intent_success(payment_client):
         transaction_id="pi_mock_123",
         listing_id=101,
         listing_version=7,
-        amount=20.5,
+        amount=25.0,  # sourced from listing_info.price
         user_id=42,
     )
 
@@ -183,10 +188,10 @@ async def test_create_payment_intent_blocked_during_queue_window(payment_client)
     import datetime as _dt
     # Simulate listing created 5 seconds ago; QUEUE_WINDOW default (5 min) still open
     recent = (_dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(seconds=5)).isoformat()
-    payment_client["mock_get_listing"].return_value = SimpleNamespace(listed_at=recent)
+    payment_client["mock_get_listing"].return_value = SimpleNamespace(listed_at=recent, price=25.0)
 
     # Queue window active → 409.  user_id omitted — comes from JWT.
-    payload = {"listing_id": 101, "listing_version": 3, "amount": 20.5}
+    payload = {"listing_id": 101, "listing_version": 3}
     response = await payment_client["client"].post("/payments/intent", json=payload)
 
     assert response.status_code == 409
@@ -194,6 +199,19 @@ async def test_create_payment_intent_blocked_during_queue_window(payment_client)
     assert detail["error"] == "queue_window_active"
     assert "window_closes_at" in detail
     # Inventory must NOT have been locked during the window
+    payment_client["mock_soft_lock"].assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_create_payment_intent_no_price(payment_client):
+    """Listing with price=0.0 (not set) → 422."""
+    payment_client["mock_get_listing"].return_value = SimpleNamespace(listed_at="", price=0.0)
+
+    payload = {"listing_id": 101, "listing_version": 3}
+    response = await payment_client["client"].post("/payments/intent", json=payload)
+
+    assert response.status_code == 422
+    assert "no price" in response.json()["detail"].lower()
     payment_client["mock_soft_lock"].assert_not_called()
 
 
@@ -224,6 +242,7 @@ async def test_webhook_success_path(payment_client):
         listing_id=202,
         listing_version=9,
         amount=30.0,
+        user_id=99,
     )
 
     payload = {
@@ -244,6 +263,7 @@ async def test_webhook_success_path(payment_client):
     payment_client["mock_publish_success"].assert_called_once_with(
         transaction_id="pi_mock_456",
         listing_id=202,
+        user_id=99,
     )
 
 
@@ -320,7 +340,7 @@ async def test_approve_payment_success(payment_client):
     assert response.json()["new_status"] == "COLLECTED"
     payment_client["mock_get_payment_log"].assert_called_once()
     payment_client["mock_mark_sold"].assert_called_once_with(listing_id=222, expected_version=5)
-    payment_client["mock_publish_success"].assert_called()
+    payment_client["mock_publish_collected"].assert_called()
 
 @pytest.mark.asyncio
 async def test_reject_payment_success(payment_client):
@@ -334,4 +354,4 @@ async def test_reject_payment_success(payment_client):
         new_status=4,
     )
     payment_client["mock_mark_available"].assert_called_once_with(listing_id=222, expected_version=5)
-    payment_client["mock_publish_failure"].assert_called()
+    payment_client["mock_publish_refunded"].assert_called()

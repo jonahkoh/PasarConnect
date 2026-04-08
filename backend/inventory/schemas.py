@@ -13,6 +13,7 @@ class FoodListingCreate(BaseModel):
     longitude: Optional[float] = Field(None, ge=-180, le=180)
     quantity: Optional[int] = Field(default=None, gt=0)
     weight_kg: Optional[float] = Field(default=None, gt=0)
+    price: Optional[float] = Field(default=None, gt=0)
     expiry: datetime
     image_url: Optional[str] = Field(None, max_length=1024)
     address: Optional[str] = Field(None, max_length=512)
@@ -62,6 +63,7 @@ class FoodListingResponse(BaseModel):
     description: Optional[str]
     quantity: Optional[int]
     weight_kg: Optional[float]
+    price: Optional[float]
     expiry: datetime
     image_url: Optional[str]
     status: ListingStatus
