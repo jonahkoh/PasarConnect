@@ -300,7 +300,9 @@ services:
     ports:
       - "8004:8004"
     environment:
-      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
+      STRIPE_SECRET_KEY:     ${STRIPE_SECRET_KEY}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET}
+      PAYMENT_SERVICE_URL:   http://payment-service:8003
     # Fully stateless — no DB, no message broker.
 
   media-service:

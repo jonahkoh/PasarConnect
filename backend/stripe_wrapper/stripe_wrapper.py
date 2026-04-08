@@ -34,19 +34,21 @@ ENDPOINTS (internal only — not exposed to the public internet):
 """
 import logging
 import os
-import uuid
 
+import httpx
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field
 
 load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-# Uncomment and set when switching to the real Stripe SDK:
-# import stripe
-# stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
+import stripe
+stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
+
+STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
+PAYMENT_SERVICE_URL   = os.getenv("PAYMENT_SERVICE_URL", "http://payment-service:8003")
 
 app = FastAPI(title="PasarConnect — Stripe Wrapper Service")
 
@@ -88,20 +90,17 @@ class RefundResponse(BaseModel):
 async def create_intent(payload: IntentRequest):
     """
     Creates a Stripe PaymentIntent.
-
-    Mock behaviour: generates a fake payment_intent_id and client_secret.
-    The Orchestrator stores the payment_intent_id as the canonical
-    transaction identifier in the Payment Log.
     """
-    # ── MOCK (replace with real stripe.PaymentIntent.create() call) ──────────
-    fake_id     = f"pi_mock_{uuid.uuid4().hex[:16]}"
-    fake_secret = f"{fake_id}_secret_{uuid.uuid4().hex[:8]}"
-
-    logger.info(
-        "MOCK STRIPE: Created PaymentIntent %s for listing_id=%s amount=%.2f",
-        fake_id, payload.listing_id, payload.amount,
-    )
-    return IntentResponse(payment_intent_id=fake_id, client_secret=fake_secret)
+    try:
+        intent = stripe.PaymentIntent.create(
+            amount   = round(payload.amount * 100),   # Stripe expects integer cents
+            currency = "sgd",
+            metadata = {"listing_id": payload.listing_id},
+        )
+    except stripe.error.StripeError as exc:
+        logger.error("Stripe PaymentIntent.create failed: %s", exc)
+        raise HTTPException(status_code=502, detail=str(getattr(exc, "user_message", None) or exc))
+    return {"payment_intent_id": intent.id, "client_secret": intent.client_secret}
 
 
 @app.post("/stripe/refund", response_model=RefundResponse)
@@ -111,16 +110,60 @@ async def issue_refund(payload: RefundRequest):
 
     In the compensating transaction flow, the Orchestrator calls this when
     the Inventory gRPC call fails after the customer has already been charged.
-
-    Mock behaviour: always returns status="succeeded".
-    If this endpoint itself fails (5xx), the Orchestrator catches the error,
-    marks the transaction as FAILED, and raises a 503 to alert ops.
     """
-    # ── MOCK (replace with real stripe.Refund.create() call) ─────────────────
-    fake_refund_id = f"re_mock_{uuid.uuid4().hex[:16]}"
+    try:
+        refund = stripe.Refund.create(payment_intent=payload.payment_intent_id)
+    except stripe.error.StripeError as exc:
+        logger.error("Stripe Refund.create failed for %s: %s", payload.payment_intent_id, exc)
+        raise HTTPException(status_code=502, detail=str(getattr(exc, "user_message", None) or exc))
+    return {"refund_id": refund.id, "status": refund.status}
 
-    logger.info(
-        "MOCK STRIPE: Refund %s issued for payment_intent=%s amount=%.2f",
-        fake_refund_id, payload.payment_intent_id, payload.amount,
-    )
-    return RefundResponse(refund_id=fake_refund_id, status="succeeded")
+
+@app.post("/stripe/webhook")
+async def stripe_webhook(request: Request):
+    """
+    Receives raw Stripe webhook events, verifies the HMAC-SHA256 signature,
+    and forwards payment_intent.succeeded to the payment service.
+
+    Local testing with Stripe CLI:
+        stripe listen --forward-to localhost:8004/stripe/webhook
+    The CLI prints a whsec_... secret — set it as STRIPE_WEBHOOK_SECRET in .env.
+    """
+    if not STRIPE_WEBHOOK_SECRET:
+        logger.error("STRIPE_WEBHOOK_SECRET is not configured")
+        raise HTTPException(status_code=500, detail="Webhook secret not configured")
+
+    body = await request.body()
+    sig_header = request.headers.get("stripe-signature", "")
+
+    try:
+        event = stripe.Webhook.construct_event(body, sig_header, STRIPE_WEBHOOK_SECRET)
+    except stripe.error.SignatureVerificationError:
+        logger.warning("Invalid Stripe webhook signature")
+        raise HTTPException(status_code=400, detail="Invalid Stripe signature")
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    if event["type"] == "payment_intent.succeeded":
+        pi = event["data"]["object"]
+        amount_dollars = pi["amount_received"] / 100.0   # cents → SGD dollars
+        async with httpx.AsyncClient() as client:
+            try:
+                resp = await client.post(
+                    f"{PAYMENT_SERVICE_URL}/webhooks/stripe",
+                    json={
+                        "stripe_transaction_id": pi["id"],
+                        "amount": amount_dollars,
+                    },
+                    timeout=10.0,
+                )
+                resp.raise_for_status()
+                logger.info(
+                    "Stripe webhook forwarded — pi=%s amount=%.2f",
+                    pi["id"], amount_dollars,
+                )
+            except httpx.HTTPStatusError as exc:
+                logger.error("Payment service rejected webhook: %s", exc)
+                raise HTTPException(status_code=502, detail="Payment service failed to process webhook")
+
+    return {"received": True}

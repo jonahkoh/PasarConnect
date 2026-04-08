@@ -3,7 +3,8 @@
   "version": "2.0.0",
   "main": "notification.js",
   "scripts": {
-    "start": "node notification.js"
+    "start": "node notification.js",
+    "test": "jest tests/"
   },
   "keywords": [],
   "author": "",
@@ -14,5 +15,8 @@
     "express": "^4.18.2",
     "jsonwebtoken": "^9.0.2",
     "socket.io": "^4.8.1"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0"
   }
 }

@@ -34,3 +34,5 @@ aiosqlite==0.20.0
 
 # JWT verification (RS256) — used by shared/jwt_auth.py
 cryptography==43.0.3
+
+stripe>=7.0.0
