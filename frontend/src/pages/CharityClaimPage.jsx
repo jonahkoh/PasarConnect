@@ -83,6 +83,7 @@ export default function CharityClaimPage({
   isLoading = false,
   socket = null,
   authUser = null,
+  userLocation = null,
 }) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -259,6 +260,9 @@ export default function CharityClaimPage({
       .catch(() => { /* non-fatal — banner still shows sessionStorage entries */ });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authUser?.token]);
+
+  // Radius slider for client-side distance filter (km).
+  const [radius, setRadius] = useState(5);
 
   async function handleArrive(claim) {
     setArrivingClaimId(claim.claim_id);
@@ -446,9 +450,12 @@ export default function CharityClaimPage({
   }
 
   const filteredListings = useMemo(() => {
-    // Include AVAILABLE listings for all charities, plus any listing this charity is queued for
-    // (e.g. PENDING_COLLECTION while being offered to them or while waiting their turn).
-    let result = listings.filter((l) => isCharityEligible(l) || Boolean(joinedWaitlist[l.id]));
+    // When location is known, restrict to listings within the chosen radius using the
+    // pre-computed Haversine distanceKm. Listings without coordinates are always included.
+    const activeListings = userLocation
+      ? listings.filter((l) => l.distanceKm == null || l.distanceKm <= radius)
+      : listings;
+    let result = activeListings.filter((l) => isCharityEligible(l) || Boolean(joinedWaitlist[l.id]));
     const keyword = search.trim().toLowerCase();
 
     if (keyword) {
@@ -476,7 +483,7 @@ export default function CharityClaimPage({
     }
 
     return result;
-  }, [listings, search, selectedCategories, selectedPickupWindows, sortBy, joinedWaitlist]);
+  }, [listings, userLocation, radius, search, selectedCategories, selectedPickupWindows, sortBy, joinedWaitlist]);
 
   const filteredMapListings = useMemo(
     () => filteredListings.filter((item) => typeof item.latitude === "number" && typeof item.longitude === "number"),
@@ -701,6 +708,20 @@ export default function CharityClaimPage({
                 <option value="name">A-Z</option>
               </select>
             </div>
+
+            {userLocation && (
+              <div className="nearby-bar">
+                <span className="nearby-bar__label">📍 Within {radius} km</span>
+                <input
+                  type="range" min="1" max="20" value={radius}
+                  onChange={(e) => setRadius(Number(e.target.value))}
+                  className="nearby-bar__slider"
+                />
+                <span className="nearby-bar__count">
+                  {filteredListings.length} listing{filteredListings.length !== 1 ? "s" : ""}
+                </span>
+              </div>
+            )}
 
             {isLoading ? (
               <div className="empty-state" aria-live="polite">Loading available listings…</div>

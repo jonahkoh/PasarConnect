@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { createListing } from "../../../lib/listingApi";
 import { getPresignedUrl, uploadToS3 } from "../../../lib/mediaApi";
+import LocationPicker from "../../../components/LocationPicker";
 
 const EMPTY = {
   title: "",
@@ -9,8 +10,8 @@ const EMPTY = {
   weight_kg: "",
   expiry: "",
   image_url: "",   // populated automatically after S3 upload
-  latitude: "",
-  longitude: "",
+  latitude: null,
+  longitude: null,
 };
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10 MB
@@ -89,8 +90,8 @@ export default function VendorCreateListingModal({ token, onCreated, onClose }) 
     };
     if (form.quantity.trim())  payload.quantity  = Number(form.quantity);
     if (form.weight_kg.trim()) payload.weight_kg = Number(form.weight_kg);
-    if (form.latitude.trim())  payload.latitude  = Number(form.latitude);
-    if (form.longitude.trim()) payload.longitude = Number(form.longitude);
+    if (form.latitude  != null) payload.latitude  = form.latitude;
+    if (form.longitude != null) payload.longitude = form.longitude;
 
     setIsSubmitting(true);
     try {
@@ -244,25 +245,20 @@ export default function VendorCreateListingModal({ token, onCreated, onClose }) 
               />
             </label>
 
-            <div className="vendor-form-row">
-              <label className="vendor-form-field">
-                <span className="vendor-form-label">Latitude</span>
-                <input
-                  type="number" step="any" value={form.latitude} onChange={set("latitude")}
-                  placeholder="e.g. 1.3521"
-                  className="vendor-form-input"
-                />
-              </label>
-              <label className="vendor-form-field">
-                <span className="vendor-form-label">Longitude</span>
-                <input
-                  type="number" step="any" value={form.longitude} onChange={set("longitude")}
-                  placeholder="e.g. 103.8198"
-                  className="vendor-form-input"
-                />
-              </label>
+            <div className="vendor-form-field">
+              <span className="vendor-form-label">Location</span>
+              <LocationPicker
+                onSelect={({ lat, lng }) =>
+                  setForm((prev) => ({ ...prev, latitude: lat, longitude: lng }))
+                }
+              />
+              {form.latitude != null && (
+                <p className="vendor-form-hint vendor-form-hint--success">
+                  ✓ Location set ({form.latitude.toFixed(4)}, {form.longitude.toFixed(4)})
+                </p>
+              )}
             </div>
-            <p className="vendor-form-hint">Location is optional — leave blank if you prefer not to show a map pin.</p>
+            <p className="vendor-form-hint">Location is optional — skip if you prefer not to show a map pin.</p>
           </div>
 
           {formError && (

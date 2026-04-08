@@ -62,6 +62,33 @@ export default function App() {
   const socket = useSocket(authUser);
   const [toast, setToast] = useState(null);
 
+  // ── User location (for geohash-based nearby search + distance display) ───────────
+  const [userLocation, setUserLocation] = useState(() => {
+    try {
+      const stored = sessionStorage.getItem("userLocation");
+      return stored ? JSON.parse(stored) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  // Request geolocation for any authenticated user as soon as they log in.
+  // Result stored in sessionStorage so the prompt only fires once per session.
+  useEffect(() => {
+    if (!authUser?.token || userLocation) return;
+    navigator.geolocation?.getCurrentPosition(
+      (pos) => {
+        const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        setUserLocation(loc);
+        try { sessionStorage.setItem("userLocation", JSON.stringify(loc)); } catch {}
+      },
+      () => { /* permission denied — fall back to showing all listings */ },
+      { enableHighAccuracy: false, timeout: 10_000, maximumAge: 300_000 }
+    );
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authUser?.token]);
+
+  // Socket event handlers
   // Auto-dismiss toast after 5 s
   useEffect(() => {
     if (!toast) return;
@@ -75,7 +102,7 @@ export default function App() {
 
     socket.on("listing:new", ({ listing_id }) => {
       if (!listing_id) return;
-      fetchListingById(listing_id, authUser?.token)
+      fetchListingById(listing_id, authUser?.token, userLocation)
         .then((listing) => {
           setCharityListings((prev) => [listing, ...prev]);
           setPublicListings((prev) => [listing, ...prev]);
@@ -125,7 +152,7 @@ export default function App() {
       setToast(`Queue position #${payload.position} assigned. You'll be notified when it's your turn.`);
     });
 
-        socket.on("payment:confirmed", ({ listing_id }) => {
+    socket.on("payment:confirmed", ({ listing_id }) => {
       // Buyer confirmed payment — mark listing as unavailable in the public feed.
       const patch = { status: "SOLD_PENDING_COLLECTION", badge: "Sold", charityWindow: "" };
       setPublicListings((prev) =>
@@ -148,7 +175,7 @@ export default function App() {
     if (!authUser?.token) return;
     const controller = new AbortController();
     setIsListingsLoading(true);
-    fetchListings(authUser.token, { signal: controller.signal })
+    fetchListings(authUser.token, { signal: controller.signal, userCoords: userLocation })
       .then((data) => {
         setCharityListings(data);
         setPublicListings(data);
@@ -156,12 +183,26 @@ export default function App() {
       .catch((err) => {
         if (err.name !== "AbortError") {
           console.error("[inventory] fetch failed:", err.message);
-          // Keep mock data on failure so the UI stays usable.
         }
       })
       .finally(() => setIsListingsLoading(false));
     return () => controller.abort();
   }, [authUser]);
+
+  // When location becomes available mid-session, re-fetch to populate distanceKm.
+  useEffect(() => {
+    if (!authUser?.token || !userLocation) return;
+    const controller = new AbortController();
+    fetchListings(authUser.token, { signal: controller.signal, userCoords: userLocation })
+      .then((data) => {
+        setCharityListings(data);
+        setPublicListings(data);
+      })
+      .catch((err) => {
+        if (err.name !== "AbortError") console.warn("[inventory] geo refetch:", err.message);
+      });
+    return () => controller.abort();
+  }, [userLocation]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [selectedClaimIds, setSelectedClaimIds] = useState([]);
   const [marketplaceCart, setMarketplaceCart] = useState([]);
@@ -316,6 +357,7 @@ export default function App() {
               isLoading={isListingsLoading}
               socket={socket}
               authUser={authUser}
+              userLocation={userLocation}
             />
             </ProtectedRoute>
           }
@@ -346,6 +388,7 @@ export default function App() {
                 onUpdateQuantity={updateMarketplaceCartItem}
                 isLoading={isListingsLoading}
                 authUser={authUser}
+                userLocation={userLocation}
               />
             </ProtectedRoute>
           }

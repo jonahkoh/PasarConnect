@@ -1,7 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
-import { CircleMarker, MapContainer, Popup, TileLayer, useMap } from "react-leaflet";
-import { latLngBounds } from "leaflet";
+import { CircleMarker, MapContainer, Marker, Popup, TileLayer, useMap } from "react-leaflet";
+import L, { latLngBounds } from "leaflet";
 import "leaflet/dist/leaflet.css";
+
+const USER_PIN_ICON = L.divIcon({
+  html: `<svg width="24" height="32" viewBox="0 0 24 32" xmlns="http://www.w3.org/2000/svg">
+    <path d="M12 0C5.373 0 0 5.373 0 12c0 9 12 20 12 20s12-11 12-20C24 5.373 18.627 0 12 0z" fill="#e63946" stroke="white" stroke-width="2"/>
+    <circle cx="12" cy="12" r="5" fill="white"/>
+  </svg>`,
+  className: "",
+  iconSize: [24, 32],
+  iconAnchor: [12, 32],
+  popupAnchor: [0, -34],
+});
 
 const DEFAULT_CENTER = {
   latitude: 1.3521,
@@ -139,18 +150,13 @@ export default function ListingLocationMap({
       />
 
       {showUserLocation && userLocation && (
-        <CircleMarker
-          center={[userLocation.latitude, userLocation.longitude]}
-          radius={9}
-          pathOptions={{
-            color: "#165b49",
-            weight: 2,
-            fillColor: "#48bc90",
-            fillOpacity: 0.9,
-          }}
+        <Marker
+          position={[userLocation.latitude, userLocation.longitude]}
+          icon={USER_PIN_ICON}
+          zIndexOffset={1000}
         >
-          <Popup>You are here</Popup>
-        </CircleMarker>
+          <Popup>📍 You are here</Popup>
+        </Marker>
       )}
 
       {listings.map((listing) => {

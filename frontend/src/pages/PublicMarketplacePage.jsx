@@ -19,6 +19,8 @@ export default function PublicMarketplacePage({
   onAddToCart,
   onUpdateQuantity,
   isLoading = false,
+  userLocation = null,
+  authUser = null,
 }) {
   const navigate = useNavigate();
   const [addingId, setAddingId] = useState(null);
@@ -29,6 +31,9 @@ export default function PublicMarketplacePage({
   const [selectedCategories, setSelectedCategories] = useState([]);
   const [selectedPickupWindows, setSelectedPickupWindows] = useState([]);
   const [selectedMapListingId, setSelectedMapListingId] = useState(listings[0]?.id ?? null);
+
+  // Radius slider for client-side distance filter (km).
+  const [radius, setRadius] = useState(5);
 
   function toggleValue(setter, currentValues, value) {
     setter(
@@ -44,7 +49,10 @@ export default function PublicMarketplacePage({
   }
 
   const filteredListings = useMemo(() => {
-    let result = [...listings];
+    const activeListings = userLocation
+      ? listings.filter((l) => l.distanceKm == null || l.distanceKm <= radius)
+      : listings;
+    let result = [...activeListings];
     const keyword = search.trim().toLowerCase();
 
     if (keyword) {
@@ -72,7 +80,7 @@ export default function PublicMarketplacePage({
     }
 
     return result;
-  }, [listings, search, selectedCategories, selectedPickupWindows, sortBy]);
+  }, [listings, userLocation, radius, search, selectedCategories, selectedPickupWindows, sortBy]);
 
   const filteredMapListings = useMemo(
     () => filteredListings.filter((item) => typeof item.latitude === "number" && typeof item.longitude === "number"),
@@ -201,6 +209,20 @@ export default function PublicMarketplacePage({
                 <option value="name">A-Z</option>
               </select>
             </div>
+
+            {userLocation && (
+              <div className="nearby-bar">
+                <span className="nearby-bar__label">📍 Within {radius} km</span>
+                <input
+                  type="range" min="1" max="20" value={radius}
+                  onChange={(e) => setRadius(Number(e.target.value))}
+                  className="nearby-bar__slider"
+                />
+                <span className="nearby-bar__count">
+                  {filteredListings.length} listing{filteredListings.length !== 1 ? "s" : ""}
+                </span>
+              </div>
+            )}
 
             {message && <div className="alert-success">{message}</div>}
 

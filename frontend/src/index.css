@@ -3682,6 +3682,86 @@ a {
   text-decoration: underline;
 }
 
+/* ── LocationPicker ───────────────────────────────────── */
+.loc-picker { position: relative; width: 100%; }
+.loc-picker__row { display: flex; gap: 8px; align-items: center; }
+.loc-picker__input-wrap { position: relative; flex: 1; display: flex; align-items: center; }
+.loc-picker__pin { position: absolute; left: 12px; font-size: 1rem; pointer-events: none; }
+.loc-picker__input {
+  width: 100%;
+  padding: 10px 12px 10px 36px;
+  border: 1.5px solid #b0c9bb;
+  border-radius: 10px;
+  font-size: 0.92rem;
+  background: #fff;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.loc-picker__input:focus { border-color: #1f8a5b; }
+.loc-picker__spin {
+  position: absolute; right: 10px;
+  width: 14px; height: 14px;
+  border: 2px solid #b0c9bb;
+  border-top-color: #1f8a5b;
+  border-radius: 50%;
+  animation: loc-spin 0.7s linear infinite;
+}
+@keyframes loc-spin { to { transform: rotate(360deg); } }
+.loc-picker__gps-btn {
+  padding: 10px 12px;
+  border: 1.5px solid #1f8a5b;
+  border-radius: 10px;
+  background: #f4f9f6;
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+.loc-picker__gps-btn:hover { background: #e6f4ee; }
+.loc-picker__gps-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.loc-picker__dropdown {
+  position: absolute;
+  top: calc(100% + 4px); left: 0; right: 0;
+  z-index: 50;
+  background: #fff;
+  border: 1.5px solid #dce8e1;
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.10);
+  max-height: 280px;
+  overflow-y: auto;
+}
+.loc-picker__option {
+  display: flex; gap: 10px; align-items: flex-start;
+  padding: 11px 16px; cursor: pointer;
+  transition: background 0.1s;
+}
+.loc-picker__option:hover { background: #f4f9f6; }
+.loc-picker__option--gps {
+  border-bottom: 1px solid #eef5f1;
+  color: #1f8a5b; font-weight: 600;
+}
+.loc-picker__option-icon { font-size: 1rem; flex-shrink: 0; margin-top: 1px; }
+.loc-picker__option-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.loc-picker__option-name { font-weight: 600; font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.loc-picker__option-addr { font-size: 0.8rem; color: #5d7a6b; }
+.loc-picker__denied { font-size: 0.82rem; color: #c0392b; margin-top: 6px; }
+.vendor-form-hint--success { color: #1f8a5b; font-weight: 600; font-size: 0.85rem; margin-top: 4px; }
+
+/* ── Nearby radius bar (charity + marketplace pages) ─── */
+.nearby-bar {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 16px;
+  background: #f4f9f6;
+  border-radius: 12px;
+  margin-bottom: 16px;
+}
+.nearby-bar__slider { flex: 1; accent-color: #1f8a5b; cursor: pointer; }
+.nearby-bar__label,
+.nearby-bar__count {
+  font-size: 0.85rem; color: #2d6b50; font-weight: 600; white-space: nowrap;
+}
+
 
 .landing-trust-list li + li {
   margin-top: 8px;

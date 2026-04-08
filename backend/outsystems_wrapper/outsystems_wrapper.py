@@ -330,12 +330,15 @@ async def public_login(body: LoginRequest):
         )
 
     token, user_id, role = await _outsystems_login(body.email, body.password)
-    if role != "public":
+    # OutSystems may return "marketplace" (matching the frontend role id) or "public".
+    # Accept both and always normalise to "public" so ProtectedRoute + sessionStorage
+    # work consistently regardless of how the OutSystems tenant was configured.
+    if role.lower() not in ("public", "marketplace"):
         raise HTTPException(
             status_code=403,
-            detail="This account is not registered as a public user. Please select the correct role.",
+            detail=f"This account is not registered as a public user (got role='{role}'). Please select the correct role.",
         )
-    return PublicLoginResponse(access_token=token, user_id=user_id, role=role)
+    return PublicLoginResponse(access_token=token, user_id=user_id, role="public")
 
 
 # ── Registration schemas ──────────────────────────────────────────────────────
