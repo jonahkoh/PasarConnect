@@ -1,7 +1,11 @@
 ﻿import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { loadStripe } from "@stripe/stripe-js";
+import { Elements, CardElement, useStripe, useElements } from "@stripe/react-stripe-js";
 import TopNav from "../components/TopNav";
-import { abandonPaymentIntent, createPaymentIntent, simulateWebhookConfirmation } from "../lib/paymentApi";
+import { abandonPaymentIntent, createPaymentIntent } from "../lib/paymentApi";
+
+const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY);
 
 function formatCurrency(amount) {
   return new Intl.NumberFormat("en-SG", {
@@ -10,13 +14,100 @@ function formatCurrency(amount) {
   }).format(amount);
 }
 
+/**
+ * Inner form component — must live inside an <Elements> provider to use
+ * useStripe / useElements hooks.
+ */
+function StripeCheckoutForm({ intents, subtotal, onSuccess, onError, onCancel }) {
+  const stripe   = useStripe();
+  const elements = useElements();
+  const [cardError,   setCardError]   = useState("");
+  const [processing, setProcessing] = useState(false);
+
+  async function handlePay(e) {
+    e.preventDefault();
+    if (!stripe || !elements) return;
+    setProcessing(true);
+    setCardError("");
+
+    const cardElement = elements.getElement(CardElement);
+    let paymentMethodId = null;
+
+    try {
+      for (const intent of intents) {
+        // Reuse the PaymentMethod created on the first confirmation
+        const params = paymentMethodId
+          ? { payment_method: paymentMethodId }
+          : { payment_method: { card: cardElement } };
+
+        const { paymentIntent, error } = await stripe.confirmCardPayment(
+          intent.client_secret,
+          params,
+        );
+        if (error) throw new Error(error.message);
+        if (!paymentMethodId && paymentIntent) {
+          paymentMethodId = paymentIntent.payment_method;
+        }
+      }
+      // Stripe confirmed — backend processes via webhook asynchronously
+      onSuccess();
+    } catch (err) {
+      setCardError(err.message);
+      setProcessing(false);
+    }
+  }
+
+  return (
+    <form onSubmit={handlePay} className="payment-form">
+      <h2>Confirm Payment</h2>
+
+      <div className="payment-form__items">
+        {intents.map((intent) => (
+          <div key={intent.id} className="payment-form__line">
+            <span>{intent.name}</span>
+            <strong>{formatCurrency(intent.amount)}</strong>
+          </div>
+        ))}
+        <div className="payment-form__line payment-form__line--total">
+          <span>Total</span>
+          <strong>{formatCurrency(subtotal)}</strong>
+        </div>
+      </div>
+
+      <div className="payment-form__card-element">
+        <CardElement options={{ style: { base: { fontSize: "16px", color: "#1a1a1a" } } }} />
+      </div>
+
+      {cardError && (
+        <p className="payment-form__error" role="alert">{cardError}</p>
+      )}
+
+      <button
+        type="submit"
+        className="cart-summary__checkout"
+        disabled={!stripe || processing}
+      >
+        {processing ? "Processing…" : `Pay ${formatCurrency(subtotal)}`}
+      </button>
+      <button
+        type="button"
+        className="link-button"
+        style={{ marginTop: "12px", display: "block", textAlign: "center", width: "100%" }}
+        onClick={onCancel}
+        disabled={processing}
+      >
+        Cancel – release reserved items and return to cart
+      </button>
+    </form>
+  );
+}
+
 // Checkout steps:
-//   idle          â†’ user reviewing cart
-//   creating      â†’ POSTing payment intents (locking listings)
-//   payment_form  â†’ mock payment form shown, waiting for user to confirm
-//   processing    â†’ calling webhook to confirm each intent
-//   success       â†’ all confirmed, cart cleared
-//   error         â†’ one or more steps failed
+//   idle          → user reviewing cart
+//   creating      → POSTing payment intents (locking listings)
+//   payment_form  → Stripe Elements form shown, waiting for card confirmation
+//   success       → Stripe confirmed payment, cart cleared
+//   error         → one or more steps failed
 
 export default function MarketplaceCartPage({
   cart,
@@ -186,89 +277,18 @@ export default function MarketplaceCartPage({
           </div>
         )}
 
-        {/* â”€â”€ Processing overlay â”€â”€ */}
-        {step === "processing" && (
-          <div className="payment-form payment-form--processing">
-            <p>Confirming your paymentâ€¦</p>
-            <p className="payment-form__note" style={{ marginTop: "8px" }}>
-              Please do not close this tab.
-            </p>
-          </div>
-        )}
-
-        {/* â”€â”€ Payment confirmation form (mock Stripe UI) â”€â”€ */}
+        {/* Payment form — Stripe Elements */}
         {step === "payment_form" && (
-          <div className="payment-form">
-            <h2>Confirm Payment</h2>
-            <p className="payment-form__note">
-              Demo mode â€” no real card is charged. Click <strong>Pay</strong> to simulate
-              Stripe confirmation.
-            </p>
-
-            <div className="payment-form__items">
-              {intents.map((intent) => (
-                <div key={intent.id} className="payment-form__line">
-                  <span>{intent.name}</span>
-                  <strong>{formatCurrency(intent.amount)}</strong>
-                </div>
-              ))}
-              <div className="payment-form__line payment-form__line--total">
-                <span>Total</span>
-                <strong>{formatCurrency(subtotal)}</strong>
-              </div>
-            </div>
-
-            <div className="payment-form__mock-card">
-              <label>Card number</label>
-              <input
-                className="payment-form__input"
-                type="text"
-                defaultValue="4242 4242 4242 4242"
-                readOnly
-                aria-label="Mock card number"
-              />
-              <div className="payment-form__card-row">
-                <div>
-                  <label>Expiry</label>
-                  <input
-                    className="payment-form__input"
-                    type="text"
-                    defaultValue="12/28"
-                    readOnly
-                    aria-label="Mock expiry"
-                  />
-                </div>
-                <div>
-                  <label>CVV</label>
-                  <input
-                    className="payment-form__input"
-                    type="text"
-                    defaultValue="123"
-                    readOnly
-                    aria-label="Mock CVV"
-                  />
-                </div>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              className="cart-summary__checkout"
-              onClick={handleConfirmPayment}
-            >
-              Pay {formatCurrency(subtotal)}
-            </button>
-            <button
-              type="button"
-              className="link-button"
-              style={{ marginTop: "12px", display: "block", textAlign: "center", width: "100%" }}
-              onClick={handleAbandonCheckout}
-            >
-              Cancel â€” release reserved items and return to cart
-            </button>
-          </div>
+          <Elements stripe={stripePromise}>
+            <StripeCheckoutForm
+              intents={intents}
+              subtotal={subtotal}
+              onSuccess={() => { onClearCart(); setIntents([]); setStep("success"); }}
+              onError={(msg) => { setCheckoutError(msg); setStep("error"); }}
+              onCancel={handleAbandonCheckout}
+            />
+          </Elements>
         )}
-
         {/* â”€â”€ Cart view (idle only â€” creating/processing have overlays) â”€â”€ */}
         {step === "idle" && (
           <>

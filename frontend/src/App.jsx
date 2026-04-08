@@ -105,7 +105,6 @@ export default function App() {
       fetchListingById(listing_id, authUser?.token, userLocation)
         .then((listing) => {
           setCharityListings((prev) => [listing, ...prev]);
-          setPublicListings((prev) => [listing, ...prev]);
         })
         .catch((err) => console.warn("[listing:new] fetch failed:", err.message));
     });
@@ -115,6 +114,9 @@ export default function App() {
       setCharityListings((prev) =>
         prev.map((l) => (l.id === listing_id ? { ...l, ...patch } : l))
       );
+      fetchListingById(listing_id, authUser?.token, userLocation)
+        .then((listing) => setPublicListings((prev) => [listing, ...prev]))
+        .catch((err) => console.warn("[listing:window_closed] fetch failed:", err.message));
     });
 
     socket.on("claim:success", ({ listing_id }) => {
@@ -177,8 +179,10 @@ export default function App() {
     setIsListingsLoading(true);
     fetchListings(authUser.token, { signal: controller.signal, userCoords: userLocation })
       .then((data) => {
+        const windowMs = parseFloat(import.meta.env.VITE_QUEUE_WINDOW_MINUTES || "5") * 60 * 1000;
+        const now = Date.now();
         setCharityListings(data);
-        setPublicListings(data);
+        setPublicListings(data.filter((l) => !l.listedAt || (now - new Date(l.listedAt).getTime()) >= windowMs));
       })
       .catch((err) => {
         if (err.name !== "AbortError") {
@@ -195,8 +199,10 @@ export default function App() {
     const controller = new AbortController();
     fetchListings(authUser.token, { signal: controller.signal, userCoords: userLocation })
       .then((data) => {
+        const windowMs = parseFloat(import.meta.env.VITE_QUEUE_WINDOW_MINUTES || "5") * 60 * 1000;
+        const now = Date.now();
         setCharityListings(data);
-        setPublicListings(data);
+        setPublicListings(data.filter((l) => !l.listedAt || (now - new Date(l.listedAt).getTime()) >= windowMs));
       })
       .catch((err) => {
         if (err.name !== "AbortError") console.warn("[inventory] geo refetch:", err.message);

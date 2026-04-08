@@ -104,7 +104,8 @@ io.on("connection", (socket) => {
 
   if (role === "charity") {
     socket.join(`charity:${sub}`);
-    console.log(`[socket] sub=${sub} joined: listings, charity:${sub}`);
+    socket.join("charities");
+    console.log(`[socket] sub=${sub} joined: listings, charities, charity:${sub}`);
   } else if (role === "vendor") {
     socket.join(`vendor:${sub}`);
     console.log(`[socket] sub=${sub} joined: listings, vendor:${sub}`);
@@ -272,7 +273,7 @@ async function startConsumer() {
   await ch.bindQueue(QUEUES.listingCreated, EVENT_EXCHANGE, "listing.created");
   ch.consume(QUEUES.listingCreated, (msg) => {
     if (!msg) return;
-    try { emitToRooms("listings", "listing:new", JSON.parse(msg.content.toString())); }
+    try { emitToRooms("charities", "listing:new", JSON.parse(msg.content.toString())); }
     catch (e) { console.error("[amqp] listing.created parse error:", e.message); }
     ch.ack(msg);
   });

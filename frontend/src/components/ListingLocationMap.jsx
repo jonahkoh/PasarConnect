@@ -159,7 +159,7 @@ export default function ListingLocationMap({
         </Marker>
       )}
 
-      {listings.map((listing) => {
+      {listings.filter((listing) => listing.latitude != null && listing.longitude != null).map((listing) => {
         const isSelected = listing.id === selectedListingId;
 
         return (
