@@ -168,6 +168,7 @@ async def create_payment_intent(
 
     # Step 0b — Block purchase while the charity queue window is active
     listing_price = 0.0
+    listing_info = None  # hoisted so Step 1 self-heal can inspect it
     try:
         listing_info = await inventory_client.get_listing(payload.listing_id)
         listing_price = listing_info.price  # 0.0 means no price set
@@ -210,8 +211,30 @@ async def create_payment_intent(
         if code == grpc.StatusCode.NOT_FOUND:
             raise HTTPException(status_code=404, detail="Listing not found.")
         if code == grpc.StatusCode.ABORTED:
-            raise HTTPException(status_code=409, detail="Listing is no longer available.")
-        raise HTTPException(status_code=503, detail="Inventory service unavailable.")
+            # Self-heal: if Step 0b showed the listing was already PENDING_PAYMENT,
+            # our lock may be stale (prior payment was refunded but inventory rollback
+            # failed).  Attempt rollback with the known version then retry the lock.
+            if listing_info is not None and listing_info.status == "PENDING_PAYMENT":
+                try:
+                    rolled_back_version = await inventory_client.rollback_listing_to_available(
+                        payload.listing_id, listing_info.version
+                    )
+                    new_version = await inventory_client.lock_listing_pending_payment(
+                        payload.listing_id, rolled_back_version
+                    )
+                    logger.info(
+                        "Self-healed stuck PENDING_PAYMENT listing %s (version %s → %s).",
+                        payload.listing_id, listing_info.version, new_version,
+                    )
+                except Exception as heal_exc:
+                    logger.warning(
+                        "Self-heal failed for listing %s: %s", payload.listing_id, heal_exc
+                    )
+                    raise HTTPException(status_code=409, detail="Listing is no longer available.")
+            else:
+                raise HTTPException(status_code=409, detail="Listing is no longer available.")
+        else:
+            raise HTTPException(status_code=503, detail="Inventory service unavailable.")
 
     async with httpx.AsyncClient() as client:
         # Step 2 — Create PaymentIntent via Stripe Wrapper
@@ -345,6 +368,15 @@ async def stripe_webhook(payload: StripeWebhookPayload):
             reason         = f"Inventory gRPC error: [{exc.code()}] {exc.details()}",
         )
 
+        # Notify the buyer via their private channel only when a refund was issued.
+        if refund_ok:
+            await publisher.publish_payment_refunded(
+                transaction_id = payload.stripe_transaction_id,
+                listing_id     = log.listing_id,
+                user_id        = log.user_id,
+                reason         = "Inventory service unavailable — your payment has been refunded automatically.",
+            )
+
         raise HTTPException(
             status_code=503,
             detail={
@@ -457,16 +489,17 @@ async def abandon_payment_intent(
     """
     log = await _fetch_payment_log_or_raise(transaction_id)
 
-    if _payment_status_name(log.status) != "PENDING":
+    status_name = _payment_status_name(log.status)
+    if status_name not in ("PENDING", "REFUNDED"):
         raise HTTPException(
             status_code=409,
-            detail=f"Cannot abandon a payment that is already {_payment_status_name(log.status)}",
+            detail=f"Cannot abandon a payment that is already {status_name}",
         )
 
     if body.user_id != log.user_id:
         raise HTTPException(status_code=403, detail="user_id does not match the transaction owner")
 
-    # Roll back PENDING_PAYMENT \u2192 AVAILABLE (best-effort)
+    # Roll back PENDING_PAYMENT → AVAILABLE (best-effort; idempotent recovery for stuck listings)
     try:
         await inventory_client.rollback_listing_to_available(log.listing_id, log.listing_version)
     except grpc.aio.AioRpcError as exc:
@@ -475,14 +508,15 @@ async def abandon_payment_intent(
             transaction_id, exc.code(), exc.details(),
         )
 
-    # Mark payment log abandoned (REFUNDED = no charge was made)
-    try:
-        await payment_log_client.update_payment_status_with_version(
-            transaction_id=transaction_id,
-            new_status=payment_log_pb2.REFUNDED,
-        )
-    except grpc.aio.AioRpcError as exc:
-        raise payment_log_client.map_payment_log_grpc_error(exc)
+    # Mark log REFUNDED only if still PENDING — REFUNDED means the compensating tx already ran
+    if status_name == "PENDING":
+        try:
+            await payment_log_client.update_payment_status_with_version(
+                transaction_id=transaction_id,
+                new_status=payment_log_pb2.REFUNDED,
+            )
+        except grpc.aio.AioRpcError as exc:
+            raise payment_log_client.map_payment_log_grpc_error(exc)
 
     return {"status": "abandoned", "transaction_id": transaction_id}
 
@@ -615,6 +649,24 @@ async def cancel_payment(transaction_id: str, body: UserCancelRequest):
             user_id=body.user_id,
             transaction_id=transaction_id,
         )
+        # Mark payment as FORFEITED — no refund, no inventory release.
+        try:
+            await payment_log_client.update_payment_status_with_version(
+                transaction_id=transaction_id,
+                new_status=payment_log_pb2.FORFEITED,
+            )
+        except grpc.aio.AioRpcError as exc:
+            raise payment_log_client.map_payment_log_grpc_error(exc)
+        # Rollback inventory to AVAILABLE (best-effort — listing stays locked if this fails).
+        try:
+            await inventory_client.rollback_listing_to_available(
+                listing_id=log.listing_id,
+                expected_version=log.listing_version,
+            )
+        except grpc.aio.AioRpcError:
+            logger.error(
+                "Inventory rollback failed on late cancel for transaction_id=%s", transaction_id
+            )
         raise HTTPException(
             status_code=409,
             detail={

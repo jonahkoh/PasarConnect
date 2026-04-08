@@ -9,6 +9,7 @@ const EMPTY = {
   quantity: "",
   weight_kg: "",
   expiry: "",
+  price: "",
   image_url: "",   // populated automatically after S3 upload
   latitude: null,
   longitude: null,
@@ -81,6 +82,9 @@ export default function VendorCreateListingModal({ token, onCreated, onClose }) 
     if (!form.quantity.trim() && !form.weight_kg.trim()) {
       setFormError("Enter either quantity (units) or weight (kg)."); return;
     }
+    if (!form.price || parseFloat(form.price) <= 0) {
+      setFormError("A public price (SGD) is required."); return;
+    }
 
     const payload = {
       title:       form.title.trim(),
@@ -92,6 +96,7 @@ export default function VendorCreateListingModal({ token, onCreated, onClose }) 
     if (form.weight_kg.trim()) payload.weight_kg = Number(form.weight_kg);
     if (form.latitude  != null) payload.latitude  = form.latitude;
     if (form.longitude != null) payload.longitude = form.longitude;
+    payload.price = parseFloat(form.price);
 
     setIsSubmitting(true);
     try {
@@ -208,7 +213,21 @@ export default function VendorCreateListingModal({ token, onCreated, onClose }) 
             </div>
           </div>
 
-          {/* Section 2 — Quantity */}
+          {/* Section 2 — Pricing */}
+          <div className="vendor-modal__section">
+            <p className="vendor-modal__section-title">Pricing</p>
+            <p className="vendor-form-hint">Set the price for the whole listing when it goes public.</p>
+            <label className="vendor-form-field">
+              <span className="vendor-form-label">Price (SGD) *</span>
+              <input
+                type="number" min="0.01" step="0.01" value={form.price} onChange={set("price")}
+                placeholder="e.g. 5.00" required
+                className="vendor-form-input"
+              />
+            </label>
+          </div>
+
+          {/* Section 3 — Quantity */}
           <div className="vendor-modal__section">
             <p className="vendor-modal__section-title">Quantity</p>
             <p className="vendor-form-hint">Fill in at least one — units for countable items (e.g. loaves), kg for loose food (e.g. rice).</p>

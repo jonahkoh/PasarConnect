@@ -72,6 +72,7 @@ class InventoryServicer(inventory_pb2_grpc.InventoryServiceServicer):
                 latitude=latitude,
                 longitude=longitude,
                 geohash=geohash_val,
+                price=request.price if request.price > 0 else None,
             )
             db.add(record)
             await db.commit()

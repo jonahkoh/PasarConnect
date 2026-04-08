@@ -57,6 +57,36 @@ function makeEmitToRooms(io) {
   };
 }
 
+// ── Replicate handlePaymentEvent for isolated routing tests ───────────────────
+function makeHandlePaymentEvent(emitToRooms) {
+  return function handlePaymentEvent(routingKey, payload) {
+    switch (routingKey) {
+      case "payment.success":
+        emitToRooms(`listing:${payload.listing_id}`, "payment:success", payload);
+        if (payload.user_id) emitToRooms(`user:${payload.user_id}`, "payment:confirmed", payload);
+        break;
+      case "payment.collected":
+        emitToRooms(`listing:${payload.listing_id}`, "payment:collected", payload);
+        break;
+      case "payment.refunded":
+        emitToRooms(`listing:${payload.listing_id}`, "payment:refunded", payload);
+        if (payload.user_id) emitToRooms(`user:${payload.user_id}`, "payment:refunded", payload);
+        break;
+      case "payment.cancelled":
+        emitToRooms(`listing:${payload.listing_id}`, "payment:cancelled", payload);
+        if (payload.user_id) emitToRooms(`user:${payload.user_id}`, "payment:cancelled", payload);
+        break;
+      case "payment.forfeited":
+        emitToRooms(`listing:${payload.listing_id}`, "payment:forfeited", payload);
+        if (payload.user_id) emitToRooms(`user:${payload.user_id}`, "payment:forfeited", payload);
+        break;
+      case "payment.failure":
+        emitToRooms(`listing:${payload.listing_id}`, "payment:error", payload);
+        break;
+    }
+  };
+}
+
 // ── Test suite ─────────────────────────────────────────────────────────────────
 
 describe("Room assignment on socket connect", () => {
@@ -200,5 +230,77 @@ describe("No duplicate card — two distinct events for two distinct phases", ()
       e => e.room === "listings" || e.room === "user:99"
     );
     expect(publicReceived).toHaveLength(0);
+  });
+});
+
+// ── Payment event routing ──────────────────────────────────────────────────────
+
+describe("handlePaymentEvent routing", () => {
+  function setup() {
+    const io = makeMockIo();
+    const emitToRooms = makeEmitToRooms(io);
+    const handle = makeHandlePaymentEvent(emitToRooms);
+    return { io, handle };
+  }
+
+  // payment.refunded — buyer notification with reason
+  test("payment.refunded emits to listing room AND buyer's user room", () => {
+    const { io, handle } = setup();
+    handle("payment.refunded", { listing_id: 1, user_id: 42, reason: "Inventory service unavailable" });
+
+    const rooms = io._emitted.map(e => e.room);
+    expect(rooms).toContain("listing:1");
+    expect(rooms).toContain("user:42");
+    expect(io._emitted.filter(e => e.event === "payment:refunded")).toHaveLength(2);
+  });
+
+  test("payment.refunded payload carries the reason string to the buyer", () => {
+    const { io, handle } = setup();
+    handle("payment.refunded", { listing_id: 1, user_id: 42, reason: "Inventory service unavailable" });
+
+    const userEmit = io._emitted.find(e => e.room === "user:42");
+    expect(userEmit.payload.reason).toBe("Inventory service unavailable");
+  });
+
+  test("payment.refunded without user_id emits only to listing room", () => {
+    const { io, handle } = setup();
+    handle("payment.refunded", { listing_id: 1 });  // no user_id
+
+    expect(io._emitted).toHaveLength(1);
+    expect(io._emitted[0].room).toBe("listing:1");
+  });
+
+  // payment.forfeited — no-show / late cancel
+  test("payment.forfeited emits to listing room AND buyer's user room", () => {
+    const { io, handle } = setup();
+    handle("payment.forfeited", { listing_id: 3, user_id: 7 });
+
+    const rooms = io._emitted.map(e => e.room);
+    expect(rooms).toContain("listing:3");
+    expect(rooms).toContain("user:7");
+    expect(io._emitted.filter(e => e.event === "payment:forfeited")).toHaveLength(2);
+  });
+
+  // payment.failure — ops only, buyer must NOT receive via this path
+  test("payment.failure emits payment:error to listing room only (no user notification)", () => {
+    const { io, handle } = setup();
+    handle("payment.failure", { listing_id: 2, user_id: 99 });
+
+    expect(io._emitted).toHaveLength(1);
+    expect(io._emitted[0].room).toBe("listing:2");
+    expect(io._emitted[0].event).toBe("payment:error");
+    // user:99 must NOT receive anything via the failure path
+    const userEmits = io._emitted.filter(e => e.room === "user:99");
+    expect(userEmits).toHaveLength(0);
+  });
+
+  // payment.cancelled
+  test("payment.cancelled emits to listing room AND buyer's user room", () => {
+    const { io, handle } = setup();
+    handle("payment.cancelled", { listing_id: 5, user_id: 10 });
+
+    const rooms = io._emitted.map(e => e.room);
+    expect(rooms).toContain("listing:5");
+    expect(rooms).toContain("user:10");
   });
 });

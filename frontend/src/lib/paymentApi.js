@@ -25,18 +25,16 @@ function authHeaders(token) {
  *
  * @param {number} listingId
  * @param {number} listingVersion - current inventory version (optimistic lock)
- * @param {number} amount         - total charge in SGD (> 0)
  * @param {string} token          - RS256 JWT from sessionStorage
  * @returns {{ client_secret: string }} — mock client_secret for demo use
  */
-export async function createPaymentIntent(listingId, listingVersion, amount, token) {
+export async function createPaymentIntent(listingId, listingVersion, token) {
   const response = await fetch(`${PAYMENT_BASE}/intent`, {
     method:  "POST",
     headers: authHeaders(token),
     body:    JSON.stringify({
       listing_id:      listingId,
       listing_version: listingVersion,
-      amount,
     }),
   });
 

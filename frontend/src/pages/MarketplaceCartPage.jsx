@@ -3,7 +3,8 @@ import { Link } from "react-router-dom";
 import { loadStripe } from "@stripe/stripe-js";
 import { Elements, CardElement, useStripe, useElements } from "@stripe/react-stripe-js";
 import TopNav from "../components/TopNav";
-import { abandonPaymentIntent, createPaymentIntent } from "../lib/paymentApi";
+import Toast from "../components/Toast";
+import { abandonPaymentIntent, createPaymentIntent, simulateWebhookConfirmation } from "../lib/paymentApi";
 
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY);
 
@@ -48,12 +49,12 @@ function StripeCheckoutForm({ intents, subtotal, onSuccess, onError, onCancel })
         if (!paymentMethodId && paymentIntent) {
           paymentMethodId = paymentIntent.payment_method;
         }
+        // Advance backend PENDING → SUCCESS and inventory PENDING_PAYMENT → SOLD_PENDING_COLLECTION
+        await simulateWebhookConfirmation(intent.transaction_id, intent.amount);
       }
-      // Stripe confirmed — backend processes via webhook asynchronously
       onSuccess();
     } catch (err) {
-      setCardError(err.message);
-      setProcessing(false);
+      onError(err.message);
     }
   }
 
@@ -122,6 +123,12 @@ export default function MarketplaceCartPage({
   const [intents, setIntents]             = useState([]);
   // Track which item is currently being locked so the UI can show partial progress
   const [lockingIndex, setLockingIndex]   = useState(-1);
+  const [toast, setToast]                 = useState(null);
+
+  function showToast(msg) {
+    setToast(msg);
+    setTimeout(() => setToast(null), 6000);
+  }
 
   const subtotal = useMemo(
     () => cart.reduce((sum, entry) => sum + entry.quantity * entry.unitPrice, 0),
@@ -145,7 +152,6 @@ export default function MarketplaceCartPage({
         const result = await createPaymentIntent(
           entry.id,
           entry.listing_version ?? 0,
-          amount,
           authUser?.token,
         );
         const transactionId =
@@ -175,27 +181,6 @@ export default function MarketplaceCartPage({
     }
   }
 
-  // â”€â”€ Step 2: Simulate Stripe webhook confirmation for every intent â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  async function handleConfirmPayment() {
-    setStep("processing");
-    setCheckoutError("");
-
-    try {
-      for (const intent of intents) {
-        await simulateWebhookConfirmation(intent.transaction_id, intent.amount);
-      }
-      onClearCart();
-      setIntents([]);
-      setStep("success");
-    } catch (err) {
-      // Partial failure â€” at least one webhook call failed.  Leave intents in
-      // state so the user can see what happened; they'll need to contact support
-      // for partial completions, but for demo mode this is a clean error screen.
-      setCheckoutError(err.message || "Payment confirmation failed. Please contact support.");
-      setStep("error");
-    }
-  }
-
   // â”€â”€ Cancel from payment form â€” abandon all pending intents â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   async function handleAbandonCheckout() {
     const userId = Number(authUser?.userId ?? 0);
@@ -216,6 +201,7 @@ export default function MarketplaceCartPage({
   return (
     <div className="app-shell">
       <TopNav cartCount={totalCartItems} />
+      <Toast message={toast} onDismiss={() => setToast(null)} />
 
       <main className="page">
         <section className="cart-page__hero">
@@ -284,7 +270,7 @@ export default function MarketplaceCartPage({
               intents={intents}
               subtotal={subtotal}
               onSuccess={() => { onClearCart(); setIntents([]); setStep("success"); }}
-              onError={(msg) => { setCheckoutError(msg); setStep("error"); }}
+              onError={(msg) => { showToast(msg); setIntents([]); setStep("idle"); }}
               onCancel={handleAbandonCheckout}
             />
           </Elements>

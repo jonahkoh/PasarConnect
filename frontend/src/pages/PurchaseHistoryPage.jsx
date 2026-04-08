@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import TopNav from "../components/TopNav";
+import Toast from "../components/Toast";
 import { cancelPayment, fetchPurchaseHistory, reportArrived } from "../lib/paymentApi";
 
 function formatCurrency(amount) {
@@ -57,6 +58,12 @@ export default function PurchaseHistoryPage({ authUser, socket }) {
   const [error, setError]       = useState("");
   // Per-order action state: { [transactionId]: "arriving" | "cancelling" | "error:message" }
   const [actions, setActions]   = useState({});
+  const [toast, setToast]       = useState(null);
+
+  function showToast(msg) {
+    setToast(msg);
+    setTimeout(() => setToast(null), 6000);
+  }
 
   const userName = sessionStorage.getItem("authUserName") || (authUser?.userId ? `User #${authUser.userId}` : "—");
   const userRole = authUser?.role ?? sessionStorage.getItem("authRole") ?? "—";
@@ -90,10 +97,22 @@ export default function PurchaseHistoryPage({ authUser, socket }) {
       );
     }
 
-    socket.on("payment:collected",  ({ transaction_id }) => patchOrder(transaction_id, "COLLECTED"));
-    socket.on("payment:refunded",   ({ transaction_id }) => patchOrder(transaction_id, "REFUNDED"));
-    socket.on("payment:cancelled",  ({ transaction_id }) => patchOrder(transaction_id, "REFUNDED"));
-    socket.on("payment:forfeited",  ({ transaction_id }) => patchOrder(transaction_id, "FORFEITED"));
+    socket.on("payment:collected",  ({ transaction_id }) => {
+      patchOrder(transaction_id, "COLLECTED");
+      showToast("Item collected. Thank you!");
+    });
+    socket.on("payment:refunded",   ({ transaction_id, reason }) => {
+      patchOrder(transaction_id, "REFUNDED");
+      showToast(`Payment Refunded. Reason: ${reason || "Payment has been reversed."}`);
+    });
+    socket.on("payment:cancelled",  ({ transaction_id }) => {
+      patchOrder(transaction_id, "REFUNDED");
+      showToast("Payment Refunded. Reason: Order cancelled successfully.");
+    });
+    socket.on("payment:forfeited",  ({ transaction_id }) => {
+      patchOrder(transaction_id, "FORFEITED");
+      showToast("Payment Forfeited. Reason: Cancel window expired or no-show recorded.");
+    });
 
     return () => {
       socket.off("payment:collected");
@@ -140,6 +159,7 @@ export default function PurchaseHistoryPage({ authUser, socket }) {
   return (
     <div className="app-shell">
       <TopNav orderPendingCount={orders.filter((o) => o.status === "SUCCESS").length} />
+      <Toast message={toast} onDismiss={() => setToast(null)} />
 
       <main className="page history-page">
         {/* ── User profile card ── */}

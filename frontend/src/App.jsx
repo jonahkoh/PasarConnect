@@ -27,10 +27,6 @@ function ProtectedRoute({ authUser, requiredRole, loginRole, children }) {
   return children;
 }
 
-function parsePrice(value) {
-  return Number(value.replace(/[^0-9.]/g, "")) || 0;
-}
-
 function parseQuantity(value) {
   const match = value.match(/\d+/);
   return match ? Number(match[0]) : 0;
@@ -115,7 +111,9 @@ export default function App() {
         prev.map((l) => (l.id === listing_id ? { ...l, ...patch } : l))
       );
       fetchListingById(listing_id, authUser?.token, userLocation)
-        .then((listing) => setPublicListings((prev) => [listing, ...prev]))
+        .then((listing) => {
+          if (listing.price != null) setPublicListings((prev) => [listing, ...prev]);
+        })
         .catch((err) => console.warn("[listing:window_closed] fetch failed:", err.message));
     });
 
@@ -182,7 +180,7 @@ export default function App() {
         const windowMs = parseFloat(import.meta.env.VITE_QUEUE_WINDOW_MINUTES || "5") * 60 * 1000;
         const now = Date.now();
         setCharityListings(data);
-        setPublicListings(data.filter((l) => !l.listedAt || (now - new Date(l.listedAt).getTime()) >= windowMs));
+        setPublicListings(data.filter((l) => (!l.listedAt || (now - new Date(l.listedAt).getTime()) >= windowMs) && l.price != null));
       })
       .catch((err) => {
         if (err.name !== "AbortError") {
@@ -202,7 +200,7 @@ export default function App() {
         const windowMs = parseFloat(import.meta.env.VITE_QUEUE_WINDOW_MINUTES || "5") * 60 * 1000;
         const now = Date.now();
         setCharityListings(data);
-        setPublicListings(data.filter((l) => !l.listedAt || (now - new Date(l.listedAt).getTime()) >= windowMs));
+        setPublicListings(data.filter((l) => (!l.listedAt || (now - new Date(l.listedAt).getTime()) >= windowMs) && l.price != null));
       })
       .catch((err) => {
         if (err.name !== "AbortError") console.warn("[inventory] geo refetch:", err.message);
@@ -311,11 +309,8 @@ export default function App() {
           vendor:          item.vendor,
           imageUrl:        item.imageUrl,
           quantity:        1,
-          // Marketplace items need amount > 0 for the payment service.
-          // priceLabel is currently "Free" for all listings; use $2.00 SGD as the
-          // demo marketplace price until the inventory API exposes a price field.
-          unitPrice:       Math.max(parsePrice(item.priceLabel), 2.00),
-          maxQuantity:     parseQuantity(item.quantityLabel),
+          unitPrice:       item.price ?? 0,
+          maxQuantity:     1,
           pickupWindow:    item.pickupWindow ?? "Self pickup",
           location:        item.vendor,
           // Keep the inventory version so the payment service can verify no

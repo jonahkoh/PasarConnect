@@ -17,6 +17,7 @@ message GetListingResponse {
   int32  version    = 2;
   string status     = 3;
   string listed_at  = 4;  // ISO-8601 UTC
+  double price      = 5;  // public sale price in SGD; 0.0 means not set
 }
 
 message CreateListingRequest {
@@ -27,8 +28,9 @@ message CreateListingRequest {
   double weight_kg = 5;
   string expiry = 6;
   string image_url = 7;
-  double latitude = 8;
-  double longitude = 9;
+  double latitude = 8;   // 0.0 means "not provided"
+  double longitude = 9;  // 0.0 means "not provided"
+  double price = 10;     // 0.0 means "not provided"
 }
 
 message CreateListingResponse {

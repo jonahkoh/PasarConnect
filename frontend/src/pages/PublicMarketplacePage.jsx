@@ -6,11 +6,6 @@ import CharityFilterSidebar from "../components/CharityFilterSidebar";
 import CartSummary from "../components/CartSummary";
 import LiveFoodMap from "../components/LiveFoodMap";
 
-function parseQuantity(value) {
-  const match = value.match(/\d+/);
-  return match ? Number(match[0]) : 0;
-}
-
 export default function PublicMarketplacePage({
   listings,
   cart,
@@ -120,10 +115,9 @@ export default function PublicMarketplacePage({
 
   async function handleAdd(item) {
     const currentQuantity = getCartQuantity(item.id);
-    const maxQuantity = parseQuantity(item.quantityLabel);
 
-    if (currentQuantity >= maxQuantity) {
-      setMessage(`You already added all available "${item.name}" portions to cart.`);
+    if (currentQuantity >= 1) {
+      setMessage(`"${item.name}" is already in your cart.`);
       return;
     }
 
@@ -233,12 +227,7 @@ export default function PublicMarketplacePage({
             ) : (
               <section className="catalog-grid">
                 {filteredListings.map((item) => {
-                  const cartQuantity = getCartQuantity(item.id);
-                  const availableQuantity = parseQuantity(item.quantityLabel);
-                  const remainingQuantity = Math.max(
-                    availableQuantity - cartQuantity,
-                    0
-                  );
+                  const inCart = getCartQuantity(item.id) > 0;
 
                   return (
                     <FoodCard
@@ -248,10 +237,8 @@ export default function PublicMarketplacePage({
                       onPreview={handlePreviewLocation}
                       onOpenDetail={handleOpenDetail}
                       isProcessing={addingId === item.id}
-                      isDisabled={remainingQuantity === 0}
-                      actionLabel={
-                        remainingQuantity === 0 ? "Max in Cart" : "Add to Cart"
-                      }
+                      isDisabled={inCart}
+                      actionLabel={inCart ? "Max in Cart" : "Add to Cart"}
                       helperText={`${item.pickupWindow} pickup`}
                     />
                   );

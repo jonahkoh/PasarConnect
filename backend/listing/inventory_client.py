@@ -28,6 +28,7 @@ async def create_listing(payload: dict) -> int:
         image_url=payload.get("image_url") or "",
         latitude=payload.get("latitude") or 0.0,
         longitude=payload.get("longitude") or 0.0,
+        price=payload.get("price") or 0.0,
     )
 
     try:

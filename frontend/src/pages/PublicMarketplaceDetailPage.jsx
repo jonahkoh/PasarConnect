@@ -3,22 +3,6 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import TopNav from "../components/TopNav";
 import ListingLocationMap from "../components/ListingLocationMap";
 
-function parsePrice(value) {
-  return Number(value.replace(/[^0-9.]/g, "")) || 0;
-}
-
-function parseQuantity(value) {
-  const match = value.match(/\d+/);
-  return match ? Number(match[0]) : 0;
-}
-
-function formatCurrency(amount) {
-  return new Intl.NumberFormat("en-SG", {
-    style: "currency",
-    currency: "SGD",
-  }).format(amount);
-}
-
 export default function PublicMarketplaceDetailPage({
   listings,
   cart,
@@ -54,8 +38,7 @@ export default function PublicMarketplaceDetailPage({
   }
 
   const cartQuantity = getCartQuantity(listing.id);
-  const maxQuantity = parseQuantity(listing.quantityLabel);
-  const remainingQuantity = Math.max(maxQuantity - cartQuantity, 0);
+  const remainingQuantity = Math.max(1 - cartQuantity, 0);
 
   async function handleAddToCart() {
     if (remainingQuantity <= 0) {
@@ -66,18 +49,6 @@ export default function PublicMarketplaceDetailPage({
     await new Promise((resolve) => setTimeout(resolve, 250));
     onAddToCart(listing);
     setIsAdding(false);
-  }
-
-  function handleDecreaseQuantity() {
-    onUpdateQuantity(listing.id, cartQuantity - 1);
-  }
-
-  function handleIncreaseQuantity() {
-    if (cartQuantity >= maxQuantity) {
-      return;
-    }
-
-    onUpdateQuantity(listing.id, cartQuantity + 1);
   }
 
   function handleRemoveFromCart() {
@@ -133,7 +104,7 @@ export default function PublicMarketplaceDetailPage({
                   </div>
                   <div className="claim-page__info-row">
                     <span>Available now</span>
-                    <strong>{remainingQuantity} of {maxQuantity}</strong>
+                    <strong>{listing.quantityLabel}</strong>
                   </div>
                 </section>
 
@@ -143,41 +114,25 @@ export default function PublicMarketplaceDetailPage({
                       type="button"
                       className={`claim-page__queue-button${cartQuantity > 0 ? " claim-page__queue-button--danger" : ""}`}
                       onClick={cartQuantity > 0 ? handleRemoveFromCart : handleAddToCart}
-                      disabled={cartQuantity === 0 && (remainingQuantity <= 0 || isAdding)}
+                      disabled={cartQuantity === 0 && (remainingQuantity <= 0 || isAdding || !listing.price)}
                     >
                       {cartQuantity > 0
                         ? "Remove From Cart"
-                        : remainingQuantity <= 0
-                          ? "Max In Cart"
-                          : isAdding
-                            ? "Adding..."
-                            : "Add To Cart"}
+                        : !listing.price
+                          ? "Not available for purchase"
+                          : remainingQuantity <= 0
+                            ? "Max In Cart"
+                            : isAdding
+                              ? "Adding..."
+                              : "Add To Cart"}
                     </button>
 
-                    {cartQuantity > 0 && (
-                      <div className="quantity-stepper claim-page__stepper">
-                        <button
-                          type="button"
-                          onClick={handleDecreaseQuantity}
-                          disabled={cartQuantity <= 0}
-                        >
-                          -
-                        </button>
-                        <span>{cartQuantity}</span>
-                        <button
-                          type="button"
-                          onClick={handleIncreaseQuantity}
-                          disabled={cartQuantity >= maxQuantity}
-                        >
-                          +
-                        </button>
-                      </div>
-                    )}
+
                   </div>
 
                   {cartQuantity > 0 && (
                     <p className="claim-page__queue-note">
-                      You already have {cartQuantity} in your cart. Max allowed: {maxQuantity}.
+                      This item is already in your cart.
                     </p>
                   )}
 

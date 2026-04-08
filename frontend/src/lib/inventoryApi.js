@@ -1,5 +1,9 @@
 const API_BASE = "/api/inventory";
 
+function formatCurrency(amount) {
+  return new Intl.NumberFormat("en-SG", { style: "currency", currency: "SGD" }).format(amount);
+}
+
 // ── Haversine distance (km) ───────────────────────────────────────────────────
 function haversineKm(lat1, lng1, lat2, lng2) {
   const R = 6371;
@@ -52,7 +56,8 @@ export function normalizeApiListing(raw, userCoords = null) {
         ? Math.round(haversineKm(userCoords.lat, userCoords.lng, raw.latitude, raw.longitude) * 10) / 10
         : null,
     quantityLabel: quantity,
-    priceLabel:    "Free",
+    price:         raw.price ?? null,
+    priceLabel:    raw.price != null ? formatCurrency(raw.price) : "Not priced",
     badge:         raw.status === "AVAILABLE" ? "Available" : raw.status,
     charityWindow,
     status:        raw.status,
