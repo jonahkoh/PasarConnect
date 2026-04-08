@@ -19,7 +19,6 @@ OUTSYSTEMS_API_URL   = os.getenv("OUTSYSTEMS_API_URL", "")
 OUTSYSTEMS_ADMIN_URL = os.getenv("OUTSYSTEMS_ADMIN_URL", "")
 OUTSYSTEMS_ADMIN_API_KEY = os.getenv("OUTSYSTEMS_ADMIN_API_KEY", "")
 _TIMEOUT_SECONDS = float(os.getenv("OUTSYSTEMS_TIMEOUT_SECONDS", "5.0"))
-MOCK_OUTSYSTEMS = os.getenv("MOCK_OUTSYSTEMS", "false").lower() == "true"
 
 VERIFICATION_GRPC_HOST = os.getenv("VERIFICATION_GRPC_HOST", "localhost")
 VERIFICATION_GRPC_PORT = os.getenv("VERIFICATION_GRPC_PORT", "50052")
@@ -83,17 +82,6 @@ async def _get_charity_status_grpc(charity_id: int) -> dict[str, Any]:
     Returns a default 'good standing' dict on any failure so login is never blocked
     by a verification service outage.
     """
-    if MOCK_OUTSYSTEMS:
-        return {
-            "is_banned":      False,
-            "ban_reason":     "",
-            "cooldown_until": None,
-            "warning_count":  0,
-            "recent_noshows": 0,
-            "claimed_today":  0,
-            "appeal_status":  "NONE",
-        }
-
     try:
         import verification_pb2
         import verification_pb2_grpc
@@ -132,13 +120,6 @@ async def _get_vendor_status_grpc(vendor_id: int) -> dict[str, Any]:
     Returns a default 'compliant' dict on any failure so login is never blocked
     by a verification service outage.
     """
-    if MOCK_OUTSYSTEMS:
-        return {
-            "is_compliant":     True,
-            "compliance_flag":  "",
-            "license_expires_at": "",
-        }
-
     try:
         import verification_pb2
         import verification_pb2_grpc
@@ -269,16 +250,6 @@ async def charity_login(body: LoginRequest):
     the charity's current standing (quota usage, bans, cooldowns) from the
     Verification service.
     """
-    if MOCK_OUTSYSTEMS:
-        logger.info("MOCK charity login for email=%s", body.email)
-        status = await _get_charity_status_grpc(charity_id=1)
-        return CharityLoginResponse(
-            access_token="mock.charity.token",
-            user_id=1,
-            role="charity",
-            status=status,
-        )
-
     token, user_id, role = await _outsystems_login(body.email, body.password)
     if role != "charity":
         raise HTTPException(
@@ -290,21 +261,11 @@ async def charity_login(body: LoginRequest):
 
 
 @app.post("/auth/vendor/login", response_model=VendorLoginResponse)
-async def vendor_login(body: LoginRequest):
+async def xvendor_login(body: LoginRequest):
     """
     Vendor login — validates credentials via OutSystems, enriches response with
     the vendor's NEA licence compliance status from the Verification service.
     """
-    if MOCK_OUTSYSTEMS:
-        logger.info("MOCK vendor login for email=%s", body.email)
-        status = await _get_vendor_status_grpc(vendor_id=1)
-        return VendorLoginResponse(
-            access_token="mock.vendor.token",
-            user_id=1,
-            role="vendor",
-            status=status,
-        )
-
     token, user_id, role = await _outsystems_login(body.email, body.password)
     if role != "vendor":
         raise HTTPException(
@@ -321,14 +282,6 @@ async def public_login(body: LoginRequest):
     Public user login — validates credentials via OutSystems.
     No status enrichment needed: public users have no quota or compliance checks.
     """
-    if MOCK_OUTSYSTEMS:
-        logger.info("MOCK public login for email=%s", body.email)
-        return PublicLoginResponse(
-            access_token="mock.public.token",
-            user_id=1,
-            role="public",
-        )
-
     token, user_id, role = await _outsystems_login(body.email, body.password)
     # OutSystems may return "marketplace" (matching the frontend role id) or "public".
     # Accept both and always normalise to "public" so ProtectedRoute + sessionStorage
@@ -381,10 +334,6 @@ class AdminActionRequest(BaseModel):
 @app.post("/auth/public/register", status_code=201)
 async def public_register(body: PublicRegisterRequest):
     """Forward public user registration to OutSystems UserAuth."""
-    if MOCK_OUTSYSTEMS:
-        logger.info("MOCK public register for email=%s", body.Email)
-        return {"message": "Registration successful. You can now log in."}
-
     return await _outsystems_register("/api/auth/public/register", body.model_dump())
 
 
@@ -394,10 +343,6 @@ async def charity_register(body: CharityRegisterRequest):
     Forward charity registration to OutSystems UserAuth.
     Account is created in pending state — admin must approve before login is allowed.
     """
-    if MOCK_OUTSYSTEMS:
-        logger.info("MOCK charity register for email=%s", body.Email)
-        return {"message": "Registration submitted. Pending admin approval."}
-
     return await _outsystems_register("/api/auth/charity/register", body.model_dump())
 
 
@@ -407,10 +352,6 @@ async def vendor_register(body: VendorRegisterRequest):
     Forward vendor registration to OutSystems UserAuth.
     Account is created in pending state — admin must approve before login is allowed.
     """
-    if MOCK_OUTSYSTEMS:
-        logger.info("MOCK vendor register for email=%s", body.Email)
-        return {"message": "Registration submitted. Pending admin approval."}
-
     return await _outsystems_register("/api/auth/vendor/register", body.model_dump())
 
 
@@ -419,38 +360,22 @@ async def vendor_register(body: VendorRegisterRequest):
 @app.post("/admin/charity/approve")
 async def admin_approve_charity(body: AdminActionRequest):
     """Approve a pending charity account. Requires OUTSYSTEMS_ADMIN_API_KEY."""
-    if MOCK_OUTSYSTEMS:
-        logger.info("MOCK approve charity UserId=%s", body.UserId)
-        return {"message": f"Charity {body.UserId} approved."}
-
     return await _outsystems_admin_call("/api/admin/charity/approve", body.model_dump())
 
 
 @app.post("/admin/charity/reject")
 async def admin_reject_charity(body: AdminActionRequest):
     """Reject a pending charity account. Requires OUTSYSTEMS_ADMIN_API_KEY."""
-    if MOCK_OUTSYSTEMS:
-        logger.info("MOCK reject charity UserId=%s reason=%s", body.UserId, body.RejectionReason)
-        return {"message": f"Charity {body.UserId} rejected."}
-
     return await _outsystems_admin_call("/api/admin/charity/reject", body.model_dump())
 
 
 @app.post("/admin/vendor/approve")
 async def admin_approve_vendor(body: AdminActionRequest):
     """Approve a pending vendor account. Requires OUTSYSTEMS_ADMIN_API_KEY."""
-    if MOCK_OUTSYSTEMS:
-        logger.info("MOCK approve vendor UserId=%s", body.UserId)
-        return {"message": f"Vendor {body.UserId} approved."}
-
     return await _outsystems_admin_call("/api/admin/vendor/approve", body.model_dump())
 
 
 @app.post("/admin/vendor/reject")
 async def admin_reject_vendor(body: AdminActionRequest):
     """Reject a pending vendor account. Requires OUTSYSTEMS_ADMIN_API_KEY."""
-    if MOCK_OUTSYSTEMS:
-        logger.info("MOCK reject vendor UserId=%s reason=%s", body.UserId, body.RejectionReason)
-        return {"message": f"Vendor {body.UserId} rejected."}
-
     return await _outsystems_admin_call("/api/admin/vendor/reject", body.model_dump())
