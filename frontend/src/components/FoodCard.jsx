@@ -8,6 +8,7 @@ export default function FoodCard({
   actionLabel = "Claim",
   helperText = "",
   cardClassName = "",
+  showPrice = true,
 }) {
   return (
     <article
@@ -57,7 +58,7 @@ export default function FoodCard({
 
         <div className="food-card__footer">
           <div className="food-card__actions">
-            <strong className="food-card__price">{item.priceLabel}</strong>
+            {showPrice && <strong className="food-card__price">{item.priceLabel}</strong>}
             {helperText && <span className="food-card__helper">{helperText}</span>}
             {onPreview && (
               <div className="food-card__links">

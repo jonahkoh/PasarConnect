@@ -752,6 +752,7 @@ export default function CharityClaimPage({
                         actionLabel={alreadyJoined ? "✓ In Queue" : "Join Queue"}
                         helperText={alreadyJoined ? "Position assigned at window close" : `Queue window: ${secsLeft}s left`}
                         cardClassName="food-card--queue-window"
+                        showPrice={false}
                       />
                     );
                   }
@@ -775,6 +776,7 @@ export default function CharityClaimPage({
                         actionLabel={statusLabel}
                         helperText="Waiting for your turn"
                         cardClassName="food-card--in-queue"
+                        showPrice={false}
                       />
                     );
                   }
@@ -791,6 +793,7 @@ export default function CharityClaimPage({
                       actionLabel={isQueued ? "Remove" : "Select"}
                       helperText={item.pickupWindow}
                       cardClassName={isQueued ? "food-card--selected" : ""}
+                      showPrice={false}
                     />
                   );
                 })}
