@@ -1,0 +1,52 @@
+# =============================================================================
+# PasarConnect — Terraform variable values
+# Copy to terraform.tfvars and fill in secrets before running.
+# NEVER commit terraform.tfvars to git — it is in .gitignore.
+# =============================================================================
+
+aws_region  = "ap-southeast-1"
+environment = "dev"
+project     = "pasarconnect"
+
+# VPC
+vpc_cidr           = "10.0.0.0/16"
+availability_zones = ["ap-southeast-1a", "ap-southeast-1b"]
+
+# EKS
+eks_cluster_version     = "1.29"
+on_demand_instance_type = "t3.medium"
+spot_instance_types     = ["t3.medium", "t3a.medium", "t3.large"]
+on_demand_desired       = 2
+spot_desired            = 2
+spot_min                = 1
+spot_max                = 6
+
+# RDS — CHANGE THESE
+rds_instance_class    = "db.t3.micro"
+rds_master_username   = "pasarconnect_admin"
+rds_master_password   = "CHANGE_ME_min16chars!"   # Use TF_VAR_rds_master_password env var instead
+rds_logical_databases = [
+  "inventory_db",
+  "claim_db",
+  "payment_db",
+  "verification_db",
+  "waitlist_db",
+  "notification_db",
+]
+
+# DocumentDB — CHANGE THESE
+docdb_instance_class  = "db.t3.medium"
+docdb_master_username = "pasarconnect_admin"
+docdb_master_password = "CHANGE_ME_min16chars!"   # Use TF_VAR_docdb_master_password env var instead
+
+# Amazon MQ — CHANGE THESE
+mq_instance_type = "mq.t3.micro"
+mq_username      = "pasarconnect"
+mq_password      = "CHANGE_ME_min12chars!1"       # Use TF_VAR_mq_password env var instead
+
+# S3
+media_bucket_name = "pasarconnect-media-dev-unique-suffix"   # Must be globally unique
+
+# IRSA
+media_service_namespace    = "pasarconnect"
+media_service_account_name = "media-service"

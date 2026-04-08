@@ -1,0 +1,11 @@
+variable "project"                { type = string }
+variable "environment"            { type = string }
+variable "eks_cluster_version"    { type = string }
+variable "private_subnet_ids"     { type = list(string) }
+variable "eks_nodes_sg_id"        { type = string }
+variable "on_demand_instance_type"{ type = string }
+variable "spot_instance_types"    { type = list(string) }
+variable "on_demand_desired"      { type = number }
+variable "spot_desired"           { type = number }
+variable "spot_min"               { type = number }
+variable "spot_max"               { type = number }

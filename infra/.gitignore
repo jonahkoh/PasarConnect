@@ -1,0 +1,19 @@
+# Terraform state — never commit these
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+.terraform/
+.terraform.lock.hcl
+
+# Secrets — never commit
+terraform.tfvars
+*.auto.tfvars
+override.tf
+override.tf.json
+
+# Crash logs
+crash.log
+crash.*.log
+
+# Plans — may contain secrets
+*.tfplan
